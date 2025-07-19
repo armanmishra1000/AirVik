@@ -18,7 +18,7 @@ Airvik is a modern hotel booking and management system built with Next.js, Node.
 ### Backend
 - Node.js with Express
 - TypeScript
-- PostgreSQL database
+- MongoDB database with Mongoose ODM
 - JWT for authentication
 - bcrypt for password hashing
 - UUID for secure IDs
@@ -27,7 +27,7 @@ Airvik is a modern hotel booking and management system built with Next.js, Node.
 Before you begin, ensure you have the following installed:
 - Node.js (v18+)
 - npm (v8+) or yarn
-- PostgreSQL (v14+)
+- MongoDB (v6+)
 - Git
 
 ## Installation Guide
@@ -38,37 +38,41 @@ git clone https://github.com/armanmishra1000/AirVik.git
 cd AirVik/airvik
 ```
 
-### 2. PostgreSQL Setup
-Install PostgreSQL if you haven't already:
+### 2. MongoDB Setup
+Install MongoDB if you haven't already:
 
 **macOS (using Homebrew):**
 ```bash
-brew install postgresql@14
-brew services start postgresql@14
+brew tap mongodb/brew
+brew install mongodb-community
+brew services start mongodb-community
 ```
 
 **Windows:**
-Download and install from [PostgreSQL official website](https://www.postgresql.org/download/windows/)
+Download and install from [MongoDB official website](https://www.mongodb.com/try/download/community)
 
 **Linux (Ubuntu/Debian):**
 ```bash
+# Import MongoDB public GPG key
+curl -fsSL https://pgp.mongodb.com/server-6.0.asc | sudo gpg -o /usr/share/keyrings/mongodb-server-6.0.gpg --dearmor
+
+# Create list file for MongoDB
+echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-6.0.gpg ] https://repo.mongodb.org/apt/ubuntu $(lsb_release -cs)/mongodb-org/6.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-6.0.list
+
+# Install MongoDB
 sudo apt update
-sudo apt install postgresql postgresql-contrib
-sudo systemctl start postgresql
-sudo systemctl enable postgresql
+sudo apt install -y mongodb-org
+sudo systemctl start mongod
+sudo systemctl enable mongod
 ```
 
-### 3. Create Database
+### 3. Verify MongoDB Connection
 ```bash
-# For macOS/Linux
-createdb airvik
+# Connect to MongoDB and verify it's running
+mongosh
 
-# For Windows (using psql)
-# First access psql
-psql -U postgres
-# Then in the psql shell
-CREATE DATABASE airvik;
-\q
+# In the MongoDB shell, you can exit with
+exit
 ```
 
 ### 4. Backend Setup
@@ -80,8 +84,8 @@ npm install
 
 # Create .env file (if not exists)
 echo "PORT=5000
-DATABASE_URL=postgresql://localhost:5432/airvik
-JWT_SECRET=your_jwt_secret_key_here
+MONGODB_URI=mongodb://localhost:27017/airvik
+JWT_SECRET=your_jwt_secret_key
 NODE_ENV=development
 CLIENT_URL=http://localhost:3000" > .env
 
@@ -171,19 +175,29 @@ airvik/
 - `POST /api/auth/login`: Login user
 - `GET /api/auth/me`: Get current user
 
-## Database Schema
+## Database Models
 
-### Users Table
-- `id`: UUID (Primary Key)
-- `first_name`: VARCHAR(100)
-- `last_name`: VARCHAR(100)
-- `email`: VARCHAR(255) (Unique)
-- `phone`: VARCHAR(50)
-- `password_hash`: VARCHAR(255)
-- `country`: VARCHAR(2)
-- `email_verified`: BOOLEAN
-- `created_at`: TIMESTAMP
-- `updated_at`: TIMESTAMP
+The application uses MongoDB with Mongoose for data modeling. Models are defined in the `backend/models` directory.
+
+### Creating New Models
+
+1. Create a new model file in the `backend/models` directory
+2. Define your Mongoose schema and model
+3. Export the model for use in your application
+
+### Sharing Database Data
+
+For sharing database data between team members, you can use MongoDB's export and import functionality:
+
+```bash
+# Export a collection to a JSON file
+mongodump --db airvik --collection users --out ./dump
+
+# Share the dump folder with team members
+
+# Import the data
+mongorestore ./dump
+```
 
 ## Contributing
 1. Create a new branch for your feature
