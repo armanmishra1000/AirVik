@@ -1,12 +1,20 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
+import { AuthProvider } from '../src/contexts/AuthContext'
 
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Airvik - Hotel Booking System',
-  description: 'Modern hotel booking and management system',
+  title: 'AirVik - Hotel Booking System',
+  description: 'Modern hotel booking and management system with user registration and email verification',
+  keywords: 'hotel booking, accommodation, travel, reservations',
+  authors: [{ name: 'AirVik Team' }],
+}
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
 }
 
 export default function RootLayout({
@@ -17,9 +25,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <main className="min-h-screen bg-gray-50">
+        <AuthProvider>
           {children}
-        </main>
+        </AuthProvider>
       </body>
     </html>
   );
