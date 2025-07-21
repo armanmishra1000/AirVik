@@ -310,5 +310,3 @@ Basic reports
 System settings
 Mobile optimization
 Testing & fixes
-
-
