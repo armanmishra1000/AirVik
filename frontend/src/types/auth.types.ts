@@ -121,18 +121,28 @@ export interface ProfileFormState extends FormState {
   isEditing: boolean;
 }
 
-// Authentication context interface
-export interface AuthContext {
+// Authentication state interface
+export interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
-  register: (userData: RegisterRequest) => Promise<ApiResponse<User>>;
-  verifyEmail: (token: string) => Promise<ApiResponse<User>>;
-  resendVerification: (email: string) => Promise<ApiResponse<void>>;
-  updateProfile: (userData: UpdateProfileRequest) => Promise<ApiResponse<User>>;
-  refreshUser: () => Promise<void>;
+  error: AuthError | null;
+}
+
+// Authentication context interface
+export interface AuthContextType {
+  user: User | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  error: AuthError | null;
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
+  logout: () => Promise<void>;
+  register: (userData: RegisterRequest) => Promise<void>;
+  verifyEmail: (token: string) => Promise<void>;
+  resendVerification: (email: string) => Promise<void>;
+  updateProfile: (userData: UpdateProfileRequest) => Promise<void>;
+  clearError: () => void;
+  hasPermission: (permission: string) => boolean;
 }
 
 // Rate limiting interface
@@ -202,7 +212,13 @@ export type AuthAction =
   | { type: 'VERIFY_EMAIL_SUCCESS'; payload: User }
   | { type: 'UPDATE_PROFILE_SUCCESS'; payload: User }
   | { type: 'REFRESH_USER'; payload: User }
-  | { type: 'CLEAR_ERROR' };
+  | { type: 'CLEAR_ERROR' }
+  | { type: 'AUTH_START' }
+  | { type: 'AUTH_SUCCESS'; payload: User }
+  | { type: 'AUTH_ERROR'; payload: AuthError | null }
+  | { type: 'AUTH_LOGOUT' }
+  | { type: 'UPDATE_USER'; payload: User }
+  | { type: 'SET_LOADING'; payload: boolean };
 
 // Route protection types
 export type ProtectedRouteProps = {

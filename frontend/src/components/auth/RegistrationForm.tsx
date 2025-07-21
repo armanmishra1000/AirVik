@@ -1,5 +1,7 @@
+'use client';
+
 import React, { useState, useCallback } from 'react';
-import { useRouter } from 'next/router';
+import { useRouter } from 'next/navigation';
 import { 
   RegisterRequest, 
   RegistrationFormState, 
@@ -8,7 +10,8 @@ import {
   AuthError 
 } from '../../types/auth.types';
 import { authService } from '../../services/auth.service';
-import { validatePassword, validateEmail, validateName } from '../../utils/validation';
+import { validatePassword, validateEmail, validateName, validatePhoneNumber } from '../../utils/validation';
+import { Eye, EyeOff, User, Mail, Phone, Lock, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 
 const RegistrationForm: React.FC<RegistrationFormProps> = ({ 
   onSuccess, 
@@ -173,111 +176,161 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
   };
 
   return (
-    <div className={`max-w-md mx-auto bg-white rounded-lg shadow-md p-6 ${className}`}>
-      <div className="text-center mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Create Your Account</h2>
-        <p className="text-gray-600 mt-2">Join us to book your perfect stay</p>
+    <div className={`max-w-lg mx-auto bg-white rounded-2xl shadow-xl border border-gray-100 p-8 ${className}`}>
+      {/* Header */}
+      <div className="text-center mb-8">
+        <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full mb-4">
+          <User className="w-8 h-8 text-white" />
+        </div>
+        <h2 className="text-3xl font-bold text-gray-900 mb-2">Create Account</h2>
+        <p className="text-gray-600">Join AirVik and start your journey</p>
       </div>
 
-      {/* TODO: Add form success/error messages */}
+      {/* Alert Messages */}
       {formState.error && (
-        <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
-          {formState.error}
+        <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-400 rounded-lg">
+          <div className="flex items-center">
+            <AlertCircle className="w-5 h-5 text-red-400 mr-3" />
+            <p className="text-red-700 text-sm font-medium">{formState.error}</p>
+          </div>
         </div>
       )}
 
       {formState.success && (
-        <div className="mb-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded">
-          {formState.success}
+        <div className="mb-6 p-4 bg-green-50 border-l-4 border-green-400 rounded-lg">
+          <div className="flex items-center">
+            <CheckCircle className="w-5 h-5 text-green-400 mr-3" />
+            <p className="text-green-700 text-sm font-medium">{formState.success}</p>
+          </div>
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-6">
         {/* Email Field */}
-        <div>
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+        <div className="space-y-2">
+          <label htmlFor="email" className="block text-sm font-semibold text-gray-700">
             Email Address *
           </label>
-          <input
-            type="email"
-            id="email"
-            value={formState.data.email}
-            onChange={(e) => handleInputChange('email', e.target.value)}
-            className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-              fieldErrors.email ? 'border-red-500' : 'border-gray-300'
-            }`}
-            placeholder="Enter your email address"
-            required
-            disabled={formState.isSubmitting}
-          />
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Mail className="h-5 w-5 text-gray-400" />
+            </div>
+            <input
+              type="email"
+              id="email"
+              value={formState.data.email}
+              onChange={(e) => handleInputChange('email', e.target.value)}
+              className={`w-full text-black pl-10 pr-4 py-3 border-2 rounded-xl shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                fieldErrors.email 
+                  ? 'border-red-300 bg-red-50 focus:ring-red-500' 
+                  : 'border-gray-200 bg-gray-50 hover:border-gray-300 focus:bg-white'
+              }`}
+              placeholder="Enter your email address"
+              required
+              disabled={formState.isSubmitting}
+            />
+          </div>
           {fieldErrors.email && (
-            <p className="text-red-500 text-sm mt-1">{fieldErrors.email}</p>
+            <div className="flex items-center mt-1">
+              <AlertCircle className="w-4 h-4 text-red-500 mr-1" />
+              <p className="text-red-500 text-sm">{fieldErrors.email}</p>
+            </div>
           )}
         </div>
 
         {/* Name Fields */}
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label htmlFor="firstName" className="block text-sm font-medium text-gray-700 mb-1">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <label htmlFor="firstName" className="block text-sm font-semibold text-gray-700">
               First Name *
             </label>
-            <input
-              type="text"
-              id="firstName"
-              value={formState.data.firstName}
-              onChange={(e) => handleInputChange('firstName', e.target.value)}
-              className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                fieldErrors.firstName ? 'border-red-500' : 'border-gray-300'
-              }`}
-              placeholder="First name"
-              required
-              disabled={formState.isSubmitting}
-            />
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <User className="h-5 w-5 text-gray-400" />
+              </div>
+              <input
+                type="text"
+                id="firstName"
+                value={formState.data.firstName}
+                onChange={(e) => handleInputChange('firstName', e.target.value)}
+                className={`w-full text-black pl-10 pr-4 py-3 border-2 rounded-xl shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                  fieldErrors.firstName 
+                    ? 'border-red-300 bg-red-50 focus:ring-red-500' 
+                    : 'border-gray-200 bg-gray-50 hover:border-gray-300 focus:bg-white'
+                }`}
+                placeholder="First name"
+                required
+                disabled={formState.isSubmitting}
+              />
+            </div>
             {fieldErrors.firstName && (
-              <p className="text-red-500 text-sm mt-1">{fieldErrors.firstName}</p>
+              <div className="flex items-center mt-1">
+                <AlertCircle className="w-4 h-4 text-red-500 mr-1" />
+                <p className="text-red-500 text-sm">{fieldErrors.firstName}</p>
+              </div>
             )}
           </div>
 
-          <div>
-            <label htmlFor="lastName" className="block text-sm font-medium text-gray-700 mb-1">
+          <div className="space-y-2">
+            <label htmlFor="lastName" className="block text-sm font-semibold text-gray-700">
               Last Name *
             </label>
-            <input
-              type="text"
-              id="lastName"
-              value={formState.data.lastName}
-              onChange={(e) => handleInputChange('lastName', e.target.value)}
-              className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                fieldErrors.lastName ? 'border-red-500' : 'border-gray-300'
-              }`}
-              placeholder="Last name"
-              required
-              disabled={formState.isSubmitting}
-            />
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <User className="h-5 w-5 text-gray-400" />
+              </div>
+              <input
+                type="text"
+                id="lastName"
+                value={formState.data.lastName}
+                onChange={(e) => handleInputChange('lastName', e.target.value)}
+                className={`w-full text-black pl-10 pr-4 py-3 border-2 rounded-xl shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                  fieldErrors.lastName 
+                    ? 'border-red-300 bg-red-50 focus:ring-red-500' 
+                    : 'border-gray-200 bg-gray-50 hover:border-gray-300 focus:bg-white'
+                }`}
+                placeholder="Last name"
+                required
+                disabled={formState.isSubmitting}
+              />
+            </div>
             {fieldErrors.lastName && (
-              <p className="text-red-500 text-sm mt-1">{fieldErrors.lastName}</p>
+              <div className="flex items-center mt-1">
+                <AlertCircle className="w-4 h-4 text-red-500 mr-1" />
+                <p className="text-red-500 text-sm">{fieldErrors.lastName}</p>
+              </div>
             )}
           </div>
         </div>
 
         {/* Phone Number Field (Optional) */}
-        <div>
-          <label htmlFor="phoneNumber" className="block text-sm font-medium text-gray-700 mb-1">
-            Phone Number
+        <div className="space-y-2">
+          <label htmlFor="phoneNumber" className="block text-sm font-semibold text-gray-700">
+            Phone Number <span className="text-gray-400 font-normal">(Optional)</span>
           </label>
-          <input
-            type="tel"
-            id="phoneNumber"
-            value={formState.data.phoneNumber}
-            onChange={(e) => handleInputChange('phoneNumber', e.target.value)}
-            className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-              fieldErrors.phoneNumber ? 'border-red-500' : 'border-gray-300'
-            }`}
-            placeholder="Optional phone number"
-            disabled={formState.isSubmitting}
-          />
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Phone className="h-5 w-5 text-gray-400" />
+            </div>
+            <input
+              type="tel"
+              id="phoneNumber"
+              value={formState.data.phoneNumber}
+              onChange={(e) => handleInputChange('phoneNumber', e.target.value)}
+              className={`w-full text-black pl-10 pr-4 py-3 border-2 rounded-xl shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                fieldErrors.phoneNumber 
+                  ? 'border-red-300 bg-red-50 focus:ring-red-500' 
+                  : 'border-gray-200 bg-gray-50 hover:border-gray-300 focus:bg-white'
+              }`}
+              placeholder="+1 (555) 123-4567"
+              disabled={formState.isSubmitting}
+            />
+          </div>
           {fieldErrors.phoneNumber && (
-            <p className="text-red-500 text-sm mt-1">{fieldErrors.phoneNumber}</p>
+            <div className="flex items-center mt-1">
+              <AlertCircle className="w-4 h-4 text-red-500 mr-1" />
+              <p className="text-red-500 text-sm">{fieldErrors.phoneNumber}</p>
+            </div>
           )}
         </div>
 
@@ -292,7 +345,7 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
               id="password"
               value={formState.data.password}
               onChange={(e) => handleInputChange('password', e.target.value)}
-              className={`w-full px-3 py-2 pr-10 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              className={`text-black w-full px-3 py-2 pr-10 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                 fieldErrors.password ? 'border-red-500' : 'border-gray-300'
               }`}
               placeholder="Create a strong password"
@@ -305,7 +358,7 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
               className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
             >
               {/* TODO: Add eye icon for password visibility toggle */}
-              {showPassword ? '🙈' : '👁️'}
+              {showPassword ? <EyeOff /> : <Eye /> }
             </button>
           </div>
           
@@ -343,7 +396,7 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
             id="confirmPassword"
             value={formState.confirmPassword}
             onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
-            className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+            className={`text-black w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
               fieldErrors.confirmPassword ? 'border-red-500' : 'border-gray-300'
             }`}
             placeholder="Confirm your password"
@@ -385,7 +438,7 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
         <button
           type="submit"
           disabled={formState.isSubmitting || !formState.agreedToTerms}
-          className={`w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white 
+          className={`text-black w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white 
             ${formState.isSubmitting || !formState.agreedToTerms
               ? 'bg-gray-400 cursor-not-allowed' 
               : 'bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500'

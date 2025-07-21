@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
+import mongoose, { Types } from 'mongoose';
 import { User, IUser, UserStatus } from '../models/user.model';
 import { EmailService } from './email.service';
 
@@ -103,7 +104,7 @@ export class AuthService {
       console.log(`User registered: ${user.email} (${user._id})`);
       
       return {
-        userId: user._id.toString(),
+        userId: (user._id as Types.ObjectId).toString(),
         email: user.email,
         status: user.status
       };
@@ -155,7 +156,7 @@ export class AuthService {
       console.log(`Email verified: ${user.email} (${user._id})`);
       
       return {
-        userId: user._id.toString(),
+        userId: (user._id as Types.ObjectId).toString(),
         email: user.email,
         status: user.status
       };

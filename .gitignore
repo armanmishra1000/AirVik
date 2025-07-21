@@ -1,5 +1,5 @@
 # Private documentation - don't commit to public repo
-docs/
+# docs/
 
 # Node modules
 node_modules/
