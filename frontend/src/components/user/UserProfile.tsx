@@ -50,27 +50,14 @@ const UserProfile: React.FC<UserProfileProps> = ({
       if (response.success && response.data) {
         setUser(response.data);
       } else {
-        throw new Error(response.message || 'Failed to load profile');
+        throw new Error('Failed to load profile');
       }
     } catch (error) {
       console.error('Load profile error:', error);
       
       const authError = error as AuthError;
-      
-      // Handle specific error cases
-      if (authError.statusCode === 401) {
-        // Token expired or invalid - redirect to login
-        setError('Your session has expired. Please log in again.');
-        setTimeout(() => {
-          router.push('/auth/login');
-        }, 2000);
-      } else if (authError.statusCode === 403) {
-        setError('Access denied. Please check your permissions.');
-      } else if (authError.isNetworkError) {
-        setError('Network error. Please check your connection and try again.');
-      } else {
-        setError(authError.message || 'Failed to load profile. Please try again.');
-      }
+      const errorMessage = authError.message || 'Failed to load profile. Please try again.';
+      setError(errorMessage);
       
       if (onError) {
         onError(authError);
@@ -100,12 +87,7 @@ const UserProfile: React.FC<UserProfileProps> = ({
     setIsResendingVerification(true);
 
     try {
-      const response = await authService.resendVerificationEmail(user.email);
-      
-      if (response.success) {
-        // Show success message or redirect to resend page
-        router.push(`/auth/resend-verification?email=${encodeURIComponent(user.email)}`);
-      }
+      await authService.resendVerificationEmail(user.email);
       
       if (onResendVerification) {
         onResendVerification();
@@ -114,20 +96,8 @@ const UserProfile: React.FC<UserProfileProps> = ({
       console.error('Resend verification error:', error);
       
       const authError = error as AuthError;
-      
-      // Handle specific error cases
-      if (authError.statusCode === 401) {
-        setError('Your session has expired. Please log in again.');
-        setTimeout(() => {
-          router.push('/auth/login');
-        }, 2000);
-      } else if (authError.statusCode === 429) {
-        // Rate limited - redirect to resend page which handles this better
-        router.push(`/auth/resend-verification?email=${encodeURIComponent(user.email)}`);
-      } else {
-        if (onError) {
-          onError(authError);
-        }
+      if (onError) {
+        onError(authError);
       }
     } finally {
       setIsResendingVerification(false);
@@ -187,26 +157,23 @@ const UserProfile: React.FC<UserProfileProps> = ({
 
   /**
    * Render loading state
-  */
+   */
   if (isLoading) {
     return (
-      <div className={`max-w-2xl mx-auto bg-white rounded-lg shadow-md p-6 ${className}`}>
+      <div className={`bg-white rounded-lg shadow-md p-6 ${className}`}>
         <div className="animate-pulse">
           <div className="flex items-center space-x-4 mb-6">
             <div className="w-16 h-16 bg-gray-300 rounded-full"></div>
-            <div className="flex-1">
-              <div className="h-4 bg-gray-300 rounded w-3/4 mb-2"></div>
-              <div className="h-3 bg-gray-300 rounded w-1/2"></div>
+            <div className="space-y-2">
+              <div className="h-6 bg-gray-300 rounded w-32"></div>
+              <div className="h-4 bg-gray-300 rounded w-48"></div>
             </div>
           </div>
           <div className="space-y-4">
             <div className="h-4 bg-gray-300 rounded w-full"></div>
-            <div className="h-4 bg-gray-300 rounded w-5/6"></div>
-            <div className="h-4 bg-gray-300 rounded w-4/6"></div>
+            <div className="h-4 bg-gray-300 rounded w-3/4"></div>
+            <div className="h-4 bg-gray-300 rounded w-1/2"></div>
           </div>
-        </div>
-        <div className="text-center mt-4">
-          <p className="text-sm text-gray-500">Loading your profile...</p>
         </div>
       </div>
     );
@@ -214,34 +181,24 @@ const UserProfile: React.FC<UserProfileProps> = ({
 
   /**
    * Render error state
-  */
+   */
   if (error) {
     return (
-      <div className={`max-w-2xl mx-auto bg-white rounded-lg shadow-md p-6 ${className}`}>
+      <div className={`bg-white rounded-lg shadow-md p-6 ${className}`}>
         <div className="text-center">
-          <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
-            <svg className="h-6 w-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+          <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-100 mb-4">
+            <svg className="h-8 w-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </div>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Unable to Load Profile</h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">Failed to Load Profile</h3>
           <p className="text-gray-600 mb-4">{error}</p>
-          <div className="space-y-2">
-            <button
-              onClick={loadUserProfile}
-              className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-200"
-            >
-              Try Again
-            </button>
-            {error.includes('session has expired') && (
-              <button
-                onClick={() => router.push('/auth/login')}
-                className="ml-2 bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors duration-200"
-              >
-                Go to Login
-              </button>
-            )}
-          </div>
+          <button
+            onClick={loadUserProfile}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            Try Again
+          </button>
         </div>
       </div>
     );

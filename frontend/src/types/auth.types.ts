@@ -66,10 +66,6 @@ export interface AuthError {
   statusCode: number;
   message: string;
   field?: string;
-  isNetworkError?: boolean;
-  retryAfter?: number;
-  originalError?: any;
-  rateLimitInfo?: VerificationRateLimitInfo;
 }
 
 // Form validation result interface
@@ -154,20 +150,6 @@ export interface RateLimitInfo {
   remainingTime: number;
   maxRequestsPerHour: number;
   currentRequestCount: number;
-}
-
-// Enhanced rate limit info for verification emails
-export interface VerificationRateLimitInfo {
-  attempts: number;
-  maxAttempts: number;
-  resetTime: string | Date;
-}
-
-// Response data for resend verification
-export interface ResendVerificationResponse {
-  cooldown?: number;
-  rateLimitInfo?: VerificationRateLimitInfo;
-  message?: string;
 }
 
 // Email verification result interface

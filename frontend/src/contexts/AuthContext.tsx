@@ -122,35 +122,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const clearTokens = () => {
     if (typeof window !== 'undefined') {
-      // Clear authentication tokens
       localStorage.removeItem('auth_token');
-      sessionStorage.removeItem('auth_token');
-      
-      // Clear user data
       localStorage.removeItem('user_data');
+      sessionStorage.removeItem('auth_token');
       sessionStorage.removeItem('user_data');
-      
-      // Clear registration-related data
-      localStorage.removeItem('userEmail');
-      localStorage.removeItem('emailVerified');
-      
-      // Clear any other auth-related data
-      localStorage.removeItem('registration_success');
     }
   };
 
-  // Login function
+  // Login function (placeholder - needs backend login endpoint)
   const login = async (email: string, password: string, rememberMe: boolean = false): Promise<void> => {
     try {
       dispatch({ type: 'AUTH_START' });
 
-      const response = await authService.login(email, password, rememberMe);
+      // TODO: Implement actual login endpoint in authService
+      // For now, this is a placeholder that will need backend implementation
+      throw new Error('Login endpoint not yet implemented. Please complete backend first.');
       
-      if (response.success && response.data) {
-        dispatch({ type: 'AUTH_SUCCESS', payload: response.data.user });
-      } else {
-        throw new Error(response.message || 'Login failed');
-      }
     } catch (error) {
       const authError = error as AuthError;
       dispatch({ type: 'AUTH_ERROR', payload: authError });
@@ -187,13 +174,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Logout function
   const logout = async (): Promise<void> => {
     try {
-      // Call logout API to invalidate token on server
-      await authService.logout();
+      // Call logout API if available
+      // await authService.logout();
     } catch (error) {
       console.error('Logout API error:', error);
-      // Continue with local logout even if API fails
     } finally {
-      // Clear all local authentication data
       clearTokens();
       dispatch({ type: 'AUTH_LOGOUT' });
     }
@@ -232,13 +217,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const response = await authService.verifyEmail(token);
       
       if (response.success && response.data) {
-        // Update user status to verified
-        dispatch({ type: 'UPDATE_USER', payload: response.data });
-        
-        // Mark email as verified in localStorage
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('emailVerified', 'true');
-        }
+        dispatch({ type: 'AUTH_SUCCESS', payload: response.data });
       } else {
         throw new Error(response.message || 'Email verification failed');
       }
@@ -277,27 +256,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const hasPermission = (permission: string): boolean => {
     if (!state.user) return false;
     
-    // Permission checks based on user status and roles
-    switch (permission) {
-      case 'verified':
-        return state.user.status === 'verified';
-      
-      case 'booking':
-        // Booking features require verified users
-        return state.user.status === 'verified';
-      
-      case 'profile':
-        // Profile access for authenticated users (verified or unverified)
-        return state.isAuthenticated;
-      
-      case 'admin':
-        // Admin permissions (if roles are added later)
-        return false; // TODO: Implement role-based permissions
-      
-      default:
-        // Default: allow if authenticated
-        return state.isAuthenticated;
+    // Add role-based permission logic here
+    // For now, just check if user is verified
+    if (permission === 'verified') {
+      return state.user.status === 'verified';
     }
+    
+    return true;
   };
 
   // Context value

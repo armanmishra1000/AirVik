@@ -10,7 +10,7 @@ const authController = new AuthController();
 // Rate limiting configurations
 const registrationLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 100, // Increased for development and testing (was 3)
+  max: 3, // 3 registration attempts per hour per IP
   message: {
     success: false,
     message: 'Too many registration attempts. Please try again later.',
@@ -23,7 +23,7 @@ const registrationLimiter = rateLimit({
 
 const resendLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour  
-  max: 100, // Increased for development and testing (was 5)
+  max: 5, // 5 resend attempts per hour per IP
   message: {
     success: false,
     message: 'Too many verification email requests. Please try again later.',

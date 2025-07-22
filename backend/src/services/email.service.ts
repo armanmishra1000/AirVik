@@ -21,14 +21,13 @@ interface TemplateData {
 }
 
 export class EmailService {
-  // No longer storing verification token as we're using real email
-  private transporter!: nodemailer.Transporter;
+  private transporter: nodemailer.Transporter;
   private config: EmailConfig;
+  
   constructor() {
-    
     // TODO: Load email configuration from environment variables
     this.config = {
-      host: process.env.SMTP_HOST || 'smtp.example.com',
+      host: process.env.SMTP_HOST || 'localhost',
       port: parseInt(process.env.SMTP_PORT || '587'),
       secure: process.env.SMTP_SECURE === 'true',
       auth: {
@@ -38,7 +37,6 @@ export class EmailService {
       from: process.env.FROM_EMAIL || 'noreply@hotel.com'
     };
     
-    // Always initialize the transporter
     this.initializeTransporter();
   }
   
@@ -48,7 +46,7 @@ export class EmailService {
   private initializeTransporter(): void {
     try {
       // TODO: Create nodemailer transporter with configuration
-      this.transporter = nodemailer.createTransport({
+      this.transporter = nodemailer.createTransporter({
         host: this.config.host,
         port: this.config.port,
         secure: this.config.secure,
@@ -59,7 +57,7 @@ export class EmailService {
       });
       
       // TODO: Verify transporter connection
-      this.transporter.verify((error: Error | null, success: boolean) => {
+      this.transporter.verify((error, success) => {
         if (error) {
           console.error('Email transporter verification failed:', error);
         } else {
@@ -77,12 +75,12 @@ export class EmailService {
    */
   async sendVerificationEmail(user: IUser, verificationToken: string): Promise<void> {
     try {
-      // Generate verification URL
+      // TODO: Generate verification URL
       const verificationUrl = `${process.env.FRONTEND_URL}/auth/verify/${verificationToken}`;
       const apiVerificationUrl = `${process.env.API_URL}/api/v1/auth/verify-email/${verificationToken}`;
       
-      // Load and render verification email template
-      const htmlContent = await this.renderTemplate('verification-email', {
+      // TODO: Load and render email template
+      const htmlContent = await this.renderTemplate('welcome-verification', {
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
@@ -94,7 +92,8 @@ export class EmailService {
         currentYear: new Date().getFullYear().toString()
       });
       
-      const textContent = await this.renderTemplate('verification-email', {
+      // TODO: Generate plain text version
+      const textContent = await this.renderTemplate('welcome-verification', {
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
@@ -102,11 +101,10 @@ export class EmailService {
         apiVerificationUrl: apiVerificationUrl,
         expiresIn: '24 hours',
         supportEmail: process.env.SUPPORT_EMAIL || 'support@hotel.com',
-        hotelName: process.env.HOTEL_NAME || 'AirVik Hotel',
-        currentYear: new Date().getFullYear().toString()
+        hotelName: process.env.HOTEL_NAME || 'AirVik Hotel'
       }, 'txt');
       
-      // Create mail options
+      // TODO: Send email
       const mailOptions = {
         from: {
           name: process.env.HOTEL_NAME || 'AirVik Hotel',
@@ -118,21 +116,13 @@ export class EmailService {
         text: textContent
       };
       
-      // Log that we're sending an email
-      console.log(`Sending verification email to: ${user.email}`);
-      
-      // Send actual email
       const info = await this.transporter.sendMail(mailOptions);
       
-      // Log email sent
+      // TODO: Log email sent
       console.log(`Verification email sent to ${user.email}:`, info.messageId);
       
     } catch (error) {
-      // In test mode, don't throw errors for email sending failures
-      // Log email errors but continue execution
-      console.error('Email error:', error);
-      
-      // Implement email error handling with retries
+      // TODO: Implement email error handling with retries
       console.error('Failed to send verification email:', error);
       throw new Error('Failed to send verification email');
     }
@@ -143,7 +133,7 @@ export class EmailService {
    */
   async sendVerificationSuccessEmail(user: IUser): Promise<void> {
     try {
-      // Load and render success email template
+      // TODO: Load and render success email template
       const htmlContent = await this.renderTemplate('verification-success', {
         firstName: user.firstName,
         lastName: user.lastName,
@@ -162,11 +152,10 @@ export class EmailService {
         loginUrl: `${process.env.FRONTEND_URL}/login`,
         profileUrl: `${process.env.FRONTEND_URL}/profile`,
         supportEmail: process.env.SUPPORT_EMAIL || 'support@hotel.com',
-        hotelName: process.env.HOTEL_NAME || 'AirVik Hotel',
-        currentYear: new Date().getFullYear().toString()
+        hotelName: process.env.HOTEL_NAME || 'AirVik Hotel'
       }, 'txt');
       
-      // Send confirmation email
+      // TODO: Send confirmation email
       const mailOptions = {
         from: {
           name: process.env.HOTEL_NAME || 'AirVik Hotel',
@@ -180,11 +169,11 @@ export class EmailService {
       
       const info = await this.transporter.sendMail(mailOptions);
       
-      // Log email sent
+      // TODO: Log email sent
       console.log(`Success email sent to ${user.email}:`, info.messageId);
       
     } catch (error) {
-      // Implement email error handling (non-critical)
+      // TODO: Implement email error handling (non-critical)
       console.error('Failed to send success email:', error);
       // Don't throw error as this is not critical
     }
@@ -195,17 +184,17 @@ export class EmailService {
    */
   private async renderTemplate(templateName: string, data: TemplateData, extension: string = 'html'): Promise<string> {
     try {
-      // Load template file
+      // TODO: Load template file
       const templatePath = path.join(__dirname, '..', 'templates', `${templateName}.${extension}`);
       
       if (!fs.existsSync(templatePath)) {
-        // Return fallback template if file doesn't exist
+        // TODO: Return fallback template if file doesn't exist
         return this.getFallbackTemplate(templateName, data, extension);
       }
       
       let template = fs.readFileSync(templatePath, 'utf8');
       
-      // Replace template variables with actual data
+      // TODO: Replace template variables with actual data
       Object.keys(data).forEach(key => {
         const placeholder = new RegExp(`{{${key}}}`, 'g');
         template = template.replace(placeholder, String(data[key]));
@@ -355,7 +344,7 @@ Need help? Contact us at ${data.supportEmail}
    */
   async testConnection(): Promise<boolean> {
     try {
-      // Verify email service is working
+      // TODO: Verify email service is working
       await this.transporter.verify();
       return true;
     } catch (error) {

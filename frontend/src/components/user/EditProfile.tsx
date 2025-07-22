@@ -92,34 +92,20 @@ const EditProfile: React.FC<EditProfileProps> = ({
   const loadUserProfile = async () => {
     try {
       setIsLoadingUser(true);
-      setErrorMessage(null);
       
       const response = await authService.getUserProfile();
       
       if (response.success && response.data) {
         setUser(response.data);
       } else {
-        throw new Error(response.message || 'Failed to load profile');
+        throw new Error('Failed to load profile');
       }
     } catch (error) {
       console.error('Load profile error:', error);
       
       const authError = error as AuthError;
-      
-      // Handle specific error cases
-      if (authError.statusCode === 401) {
-        // Token expired or invalid - redirect to login
-        setErrorMessage('Your session has expired. Please log in again.');
-        setTimeout(() => {
-          router.push('/auth/login');
-        }, 2000);
-      } else if (authError.statusCode === 403) {
-        setErrorMessage('Access denied. Please check your permissions.');
-      } else if (authError.isNetworkError) {
-        setErrorMessage('Network error. Please check your connection and try again.');
-      } else {
-        setErrorMessage(authError.message || 'Failed to load profile. Please try again.');
-      }
+      const errorMessage = authError.message || 'Failed to load profile. Please try again.';
+      setErrorMessage(errorMessage);
       
       if (onError) {
         onError(authError);
@@ -193,14 +179,13 @@ const EditProfile: React.FC<EditProfileProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!validateForm() || isSubmitting) {
+    if (!validateForm() || isSubmitting || !hasChanges) {
       return;
     }
 
     setIsSubmitting(true);
     setSuccessMessage(null);
     setErrorMessage(null);
-    setFormErrors({});
 
     try {
       const updateData: UpdateProfileRequest = {
@@ -219,39 +204,17 @@ const EditProfile: React.FC<EditProfileProps> = ({
         if (onSave) {
           onSave(response.data);
         }
-        
-        // Auto-hide success message after 5 seconds
-        setTimeout(() => {
-          setSuccessMessage(null);
-        }, 5000);
       } else {
-        throw new Error(response.message || 'Failed to update profile');
+        throw new Error('Failed to update profile');
       }
     } catch (error) {
       console.error('Update profile error:', error);
       
       const authError = error as AuthError;
       
-      // Handle specific error cases
-      if (authError.statusCode === 401) {
-        // Token expired or invalid - redirect to login
-        setErrorMessage('Your session has expired. Please log in again.');
-        setTimeout(() => {
-          router.push('/auth/login');
-        }, 2000);
-      } else if (authError.statusCode === 400) {
-        // Validation errors from backend
-        if (authError.field) {
-          // Field-specific validation error
-          setFormErrors({ [authError.field]: authError.message });
-          setErrorMessage('Please correct the highlighted fields.');
-        } else {
-          setErrorMessage(authError.message || 'Please check your input and try again.');
-        }
-      } else if (authError.statusCode === 403) {
-        setErrorMessage('Access denied. You do not have permission to update this profile.');
-      } else if (authError.isNetworkError) {
-        setErrorMessage('Network error. Please check your connection and try again.');
+      // Handle field-specific errors
+      if (authError.field) {
+        setFormErrors({ [authError.field]: authError.message });
       } else {
         setErrorMessage(authError.message || 'Failed to update profile. Please try again.');
       }
@@ -265,28 +228,15 @@ const EditProfile: React.FC<EditProfileProps> = ({
   };
 
   /**
-   * Handle cancel button click
+   * Handle cancel button
    */
   const handleCancel = useCallback(() => {
-    // Reset form to original values if there are unsaved changes
-    if (hasChanges && user) {
-      setFormData({
-        firstName: user.firstName,
-        lastName: user.lastName,
-        phoneNumber: user.phoneNumber || ''
-      });
-      setFormErrors({});
-      setSuccessMessage(null);
-      setErrorMessage(null);
-      setHasChanges(false);
-    }
-    
     if (onCancel) {
       onCancel();
     } else {
       router.push('/profile');
     }
-  }, [onCancel, router, hasChanges, user]);
+  }, [onCancel, router]);
 
   /**
    * Handle field blur for validation

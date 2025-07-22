@@ -11,7 +11,6 @@ export enum UserStatus {
 // User interface extending MongoDB Document
 export interface IUser extends Document {
   email: string;
-  username: string; // Added username field
   password: string;
   firstName: string;
   lastName: string;
@@ -50,13 +49,6 @@ const UserSchema = new Schema<IUser>({
       message: 'Please provide a valid email address'
     },
     index: true
-  },
-  
-  username: {
-    type: String,
-    unique: true,
-    sparse: true, // Allow multiple null values (important for backward compatibility)
-    trim: true
   },
   
   password: {
@@ -149,11 +141,11 @@ const UserSchema = new Schema<IUser>({
   timestamps: true, // Automatically adds createdAt and updatedAt
   toJSON: { 
     virtuals: true,
-    transform: function(doc, ret: any) {
+    transform: function(doc, ret) {
       // TODO: Remove sensitive fields from JSON output
-      if (ret.password) ret.password = undefined;
-      if (ret.emailVerificationToken) ret.emailVerificationToken = undefined;
-      if (ret.__v !== undefined) ret.__v = undefined;
+      delete ret.password;
+      delete ret.emailVerificationToken;
+      delete ret.__v;
       return ret;
     }
   },

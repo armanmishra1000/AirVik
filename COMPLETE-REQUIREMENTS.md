@@ -1,4 +1,59 @@
 VikBooking System - COMPLETE Requirements
+Including ALL Features (Even Those Missing from Original)
+
+MISSING FEATURES ADDED (Not in VikBooking)
+Authentication System (P0 - Core)
+Why Missing: VikBooking uses WordPress authentication
+What We Need:
+
+User registration with email verification
+Login/logout functionality
+Password reset via email
+JWT token management
+Session handling
+Role-based access control
+Two-factor authentication (optional)
+
+User Account Management (P0 - Core)
+Why Missing: VikBooking relies on WordPress user system
+What We Need:
+
+User profile creation/editing
+Password change functionality
+Account settings (language, timezone)
+Activity logs
+Account deletion/deactivation
+
+System Administration (P0 - Core)
+Why Missing: VikBooking uses WordPress admin
+What We Need:
+
+Admin dashboard
+System settings management
+User management interface
+Role and permission management
+System logs and monitoring
+
+File Upload System (P1 - Important)
+Why Missing: VikBooking uses WordPress media library
+What We Need:
+
+Image upload for rooms
+Document upload for policies
+File size and type validation
+Image optimization
+CDN integration
+
+Notification System (P1 - Important)
+Why Missing: Partially handled by WordPress
+What We Need:
+
+In-app notifications
+Push notifications
+SMS notifications (via Twilio)
+Notification preferences
+Notification history
+
 
 FEATURE BREAKDOWN (All Features)
 1. Authentication & Users (NEW)
@@ -211,45 +266,45 @@ javascript{
 }
 
 DEVELOPMENT PHASES (Updated)
-Phase 1: Foundation
-Authentication & Users
+Phase 1: Foundation (Month 1)
+Week 1-2: Authentication & Users
 
 User registration and login
 JWT implementation
 Role management
 Basic user profiles
 
-Room Management
+Week 3-4: Room Management
 
 Room CRUD operations
 Room types and categories
 Photo upload
 Basic availability
 
-Phase 2: Booking Core
-Search & Booking
+Phase 2: Booking Core (Month 2)
+Week 5-6: Search & Booking
 
 Date search
 Availability checking
 Booking creation
 Guest information
 
-Payment & Confirmation
+Week 7-8: Payment & Confirmation
 
 Payment integration
 Booking confirmation
 Email notifications
 Basic calendar
 
-Phase 3: Operations
-Management Tools
+Phase 3: Operations (Month 3)
+Week 9-10: Management Tools
 
 Booking management
 Guest profiles
 Check-in/out
 Admin dashboard
 
-Reports & Polish
+Week 11-12: Reports & Polish
 
 Basic reports
 System settings
