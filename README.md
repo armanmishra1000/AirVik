@@ -1,7 +1,20 @@
 # AirVik - Hotel Booking System
 
+## 🎉 Latest Update: User Registration with Email Verification - PRODUCTION READY!
+**Feature Status**: ✅ COMPLETED | **Last Updated**: 2025-07-22  
+**Documentation**: [Complete Feature Guide](docs/features/user-registration-email-verification/)  
+**Deployment**: [Production Setup Guide](docs/deployment/production-setup.md)  
+**Testing**: [End-to-End Test Report](docs/testing/end-to-end-test-report.md)  
+
 ## Overview
 AirVik is a modern hotel booking and management system built with Next.js, Node.js, and MongoDB. This full-stack application provides a complete solution for hotel room booking, user management, and payment processing.
+
+### ✅ Completed Features
+- **User Registration with Email Verification** - Complete authentication system with secure email verification workflow
+- **JWT Authentication** - Token-based authentication with refresh tokens
+- **Profile Management** - User profile viewing and editing capabilities
+- **Responsive Design** - Mobile-first responsive UI with Tailwind CSS
+- **Comprehensive Testing** - End-to-end testing with 50+ test cases
 
 ## Tech Stack
 

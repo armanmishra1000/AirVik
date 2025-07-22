@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verify Your Email - {{hotelName}}</title>
+  <style>
+    /* Reset styles */
+    body, html {
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      background-color: #f9f9f9;
+    }
+    
+    /* Container */
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    }
+    
+    /* Header */
+    .header {
+      background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d);
+      padding: 30px 20px;
+      text-align: center;
+      color: white;
+    }
+    
+    .header h1 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 600;
+    }
+    
+    .logo {
+      max-width: 150px;
+      margin-bottom: 15px;
+    }
+    
+    /* Content */
+    .content {
+      padding: 30px;
+      background: #ffffff;
+    }
+    
+    .greeting {
+      font-size: 22px;
+      font-weight: 500;
+      margin-bottom: 20px;
+    }
+    
+    .message {
+      margin-bottom: 25px;
+      font-size: 16px;
+    }
+    
+    /* Button */
+    .button-container {
+      text-align: center;
+      margin: 30px 0;
+    }
+    
+    .button {
+      display: inline-block;
+      background: #1a2a6c;
+      color: white;
+      padding: 14px 30px;
+      text-decoration: none;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 16px;
+      transition: background-color 0.3s;
+    }
+    
+    .button:hover {
+      background: #2a3a7c;
+    }
+    
+    /* Link */
+    .link-container {
+      margin: 20px 0;
+      padding: 15px;
+      background-color: #f5f5f5;
+      border-radius: 4px;
+      word-break: break-all;
+    }
+    
+    .link {
+      color: #1a2a6c;
+      text-decoration: none;
+    }
+    
+    /* Expiration */
+    .expiration {
+      margin: 20px 0;
+      padding: 15px;
+      background-color: #fff8e1;
+      border-left: 4px solid #ffc107;
+      font-size: 14px;
+    }
+    
+    /* Footer */
+    .footer {
+      padding: 20px;
+      text-align: center;
+      background-color: #f5f5f5;
+      color: #666;
+      font-size: 12px;
+      border-top: 1px solid #eeeeee;
+    }
+    
+    .footer p {
+      margin: 5px 0;
+    }
+    
+    .social-links {
+      margin: 15px 0;
+    }
+    
+    .social-link {
+      display: inline-block;
+      margin: 0 10px;
+      color: #1a2a6c;
+      text-decoration: none;
+    }
+    
+    /* Responsive */
+    @media only screen and (max-width: 600px) {
+      .container {
+        width: 100%;
+        border-radius: 0;
+      }
+      
+      .header {
+        padding: 20px 15px;
+      }
+      
+      .content {
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <!-- <img src="{{logoUrl}}" alt="{{hotelName}}" class="logo"> -->
+      <h1>Welcome to {{hotelName}}</h1>
+    </div>
+    
+    <div class="content">
+      <h2 class="greeting">Hello, {{firstName}}!</h2>
+      
+      <p class="message">
+        Thank you for registering with {{hotelName}}. We're excited to have you join us!
+        To complete your registration and start booking your dream accommodations, please verify your email address.
+      </p>
+      
+      <div class="button-container">
+        <a href="{{verificationUrl}}" class="button">Verify My Email</a>
+      </div>
+      
+      <p class="message">
+        If the button above doesn't work, you can copy and paste the following link into your browser:
+      </p>
+      
+      <div class="link-container">
+        <a href="{{verificationUrl}}" class="link">{{verificationUrl}}</a>
+      </div>
+      
+      <div class="expiration">
+        <strong>Important:</strong> This verification link will expire in {{expiresIn}}. Please verify your email as soon as possible.
+      </div>
+      
+      <p class="message">
+        If you didn't create an account with us, you can safely ignore this email.
+      </p>
+      
+      <p class="message">
+        We look forward to helping you find the perfect accommodations for your next trip!
+      </p>
+      
+      <p class="message">
+        Best regards,<br>
+        The {{hotelName}} Team
+      </p>
+    </div>
+    
+    <div class="footer">
+      <p>Need assistance? Contact our support team at <a href="mailto:{{supportEmail}}" class="link">{{supportEmail}}</a></p>
+      
+      <div class="social-links">
+        <a href="#" class="social-link">Facebook</a>
+        <a href="#" class="social-link">Twitter</a>
+        <a href="#" class="social-link">Instagram</a>
+      </div>
+      
+      <p>&copy; {{currentYear}} {{hotelName}}. All rights reserved.</p>
+      
+      <p>
+        This email was sent to {{email}}. Please do not reply to this email as it is automatically generated.
+      </p>
+    </div>
+  </div>
+</body>
+</html>

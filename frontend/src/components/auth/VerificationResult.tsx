@@ -61,6 +61,7 @@ const VerificationResult: React.FC<VerificationResultProps> = ({
   const verifyEmailToken = async () => {
     try {
       setVerificationState('loading');
+      setError(null);
       
       // Call the API endpoint to verify the email token
       const response = await authService.verifyEmail(token);
@@ -71,6 +72,7 @@ const VerificationResult: React.FC<VerificationResultProps> = ({
         
         // Store the user data in local storage (but not auth token since login is still required)
         localStorage.setItem('userEmail', response.data.email);
+        localStorage.setItem('emailVerified', 'true');
         
         if (onSuccess) {
           onSuccess(response.data);
@@ -85,18 +87,33 @@ const VerificationResult: React.FC<VerificationResultProps> = ({
       
       const authError = error as AuthError;
       
-      // Determine error type based on status code or message
-      if (authError.statusCode === 400 || authError.message?.includes('expired')) {
-        setVerificationState('expired');
-        setError('Your verification link has expired. Please request a new one.');
-      } else if (authError.statusCode === 404 || authError.message?.includes('invalid')) {
+      // Handle specific backend error responses
+      if (authError.statusCode === 400) {
+        if (authError.message?.toLowerCase().includes('expired') || authError.message?.toLowerCase().includes('token has expired')) {
+          setVerificationState('expired');
+          setError('Your verification link has expired. Please request a new one.');
+        } else if (authError.message?.toLowerCase().includes('invalid') || authError.message?.toLowerCase().includes('token is invalid')) {
+          setVerificationState('invalid');
+          setError('Invalid verification link. Please check your email or request a new link.');
+        } else {
+          setVerificationState('error');
+          setError(authError.message || 'Verification failed. Please try again.');
+        }
+      } else if (authError.statusCode === 404) {
         setVerificationState('invalid');
-        setError('Invalid verification link. Please check your email or request a new link.');
-      } else if (authError.message?.includes('already verified')) {
+        setError('Verification token not found. Please request a new verification email.');
+      } else if (authError.statusCode === 409 || authError.message?.toLowerCase().includes('already verified')) {
+        // User already verified - treat as success but show different message
         setVerificationState('success');
         setError('Your email has already been verified. You can now log in to your account.');
         // Auto-redirect to login since already verified
         setTimeout(() => handleRedirectToLogin(), 3000);
+      } else if (authError.statusCode === 429) {
+        setVerificationState('error');
+        setError('Too many verification attempts. Please try again later.');
+      } else if (authError.isNetworkError) {
+        setVerificationState('error');
+        setError('Network error. Please check your connection and try again.');
       } else {
         setVerificationState('error');
         setError(authError.message || 'Verification failed. Please try again.');
@@ -126,15 +143,18 @@ const VerificationResult: React.FC<VerificationResultProps> = ({
    * Navigate to resend verification page
    */
   const handleResendVerification = useCallback(() => {
-    router.push('/auth/resend-verification');
-  }, [router]);
+    // Pass the user's email if available for convenience
+    const userEmail = user?.email || localStorage.getItem('userEmail');
+    const url = userEmail ? `/auth/resend-verification?email=${encodeURIComponent(userEmail)}` : '/auth/resend-verification';
+    router.push(url);
+  }, [router, user]);
 
   /**
-   * Retry verification
+   * Retry verification with the same token
    */
   const handleRetryVerification = useCallback(() => {
     verifyEmailToken();
-  }, [token]);
+  }, []);
 
   /**
    * Render loading state
@@ -181,6 +201,9 @@ const VerificationResult: React.FC<VerificationResultProps> = ({
           </p>
           <p className="text-sm text-green-800">
             <strong>Name:</strong> {user.firstName} {user.lastName}
+          </p>
+          <p className="text-sm text-green-600">
+            <strong>Status:</strong> {user.status === 'verified' ? 'Verified' : 'Active'}
           </p>
         </div>
       )}

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { authService } from '../../services/auth.service';
 import { AuthError, VerificationRateLimitInfo, ResendVerificationResponse } from '../../types/auth.types';
 import { validateEmail } from '../../utils/validation';
@@ -20,9 +20,13 @@ const ResendVerification: React.FC<ResendVerificationProps> = ({
   className = ''
 }) => {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  
+  // Get email from URL parameters if available
+  const emailFromUrl = searchParams.get('email') || '';
   
   // State management
-  const [email, setEmail] = useState(initialEmail);
+  const [email, setEmail] = useState(initialEmail || emailFromUrl);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -90,9 +94,7 @@ const ResendVerification: React.FC<ResendVerificationProps> = ({
       const response = await authService.resendVerificationEmail(email);
       
       if (response.success) {
-        // Reset the form
-        setEmail(email); // Keep the email for potential future resends
-        
+        // Keep the email for potential future resends
         setSuccessMessage(
           `Verification email sent successfully to ${email}. Please check your inbox and spam folder.`
         );
@@ -112,6 +114,9 @@ const ResendVerification: React.FC<ResendVerificationProps> = ({
           });
         }
         
+        // Store email in localStorage for convenience
+        localStorage.setItem('userEmail', email);
+        
         if (onSuccess) {
           onSuccess(email);
         }
@@ -124,53 +129,41 @@ const ResendVerification: React.FC<ResendVerificationProps> = ({
       
       const authError = error as AuthError;
       
-      // Handle rate limiting
+      // Handle specific backend error responses
       if (authError.statusCode === 429) {
         const retryAfter = authError.retryAfter || 60;
-        const rateLimitMessage = authError.message || `Too many requests. Please wait ${retryAfter} seconds before trying again.`;
-        setErrorMessage(rateLimitMessage);
+        setCanResend(false);
+        setTimeRemaining(retryAfter);
+        setErrorMessage(
+          `Too many requests. Please wait ${retryAfter} seconds before trying again.`
+        );
         
-        // Extract rate limit info if available
+        // Set rate limit info if available
         if (authError.rateLimitInfo) {
           setRateLimitInfo({
             attempts: authError.rateLimitInfo.attempts,
             maxAttempts: authError.rateLimitInfo.maxAttempts,
             resetTime: new Date(authError.rateLimitInfo.resetTime)
           });
-        } else if (authError.message?.includes('attempts')) {
-          // Try to parse attempts from message as fallback
-          const attemptsMatch = authError.message.match(/\d+\/\d+/); 
-          if (attemptsMatch) {
-            const [attempts, maxAttempts] = attemptsMatch[0].split('/').map(Number);
-            setRateLimitInfo({
-              attempts,
-              maxAttempts,
-              resetTime: new Date(Date.now() + retryAfter * 1000)
-            });
-          } else {
-            // Default values if parsing fails
-            setRateLimitInfo({
-              attempts: 3,
-              maxAttempts: 5,
-              resetTime: new Date(Date.now() + retryAfter * 1000)
-            });
-          }
         }
-        
-        setCanResend(false);
-        setTimeRemaining(retryAfter);
       } else if (authError.statusCode === 404) {
-        setErrorMessage('Email address not found. Please check your email or create a new account.');
+        setErrorMessage('User not found. Please check your email address or create a new account.');
       } else if (authError.statusCode === 400) {
-        if (authError.message?.includes('already verified')) {
-          setErrorMessage('This email is already verified. You can proceed to login.');
-          // Add a button or auto-redirect to login
-          setTimeout(() => {
-            handleGoToLogin();
-          }, 3000);
+        if (authError.message?.toLowerCase().includes('already verified')) {
+          setErrorMessage('Your email is already verified. You can log in to your account.');
+          // Auto-redirect to login after 3 seconds
+          setTimeout(() => handleGoToLogin(), 3000);
+        } else if (authError.message?.toLowerCase().includes('validation')) {
+          setErrorMessage('Please provide a valid email address.');
+          setEmailError('Invalid email format');
         } else {
           setErrorMessage(authError.message || 'Invalid request. Please check your email address.');
         }
+      } else if (authError.statusCode === 409) {
+        setErrorMessage('Your email is already verified. You can log in to your account.');
+        setTimeout(() => handleGoToLogin(), 3000);
+      } else if (authError.isNetworkError) {
+        setErrorMessage('Network error. Please check your connection and try again.');
       } else {
         setErrorMessage(authError.message || 'Failed to send verification email. Please try again.');
       }

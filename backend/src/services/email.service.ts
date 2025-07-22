@@ -90,7 +90,8 @@ export class EmailService {
         apiVerificationUrl: apiVerificationUrl,
         expiresIn: '24 hours',
         supportEmail: process.env.SUPPORT_EMAIL || 'support@hotel.com',
-        hotelName: process.env.HOTEL_NAME || 'AirVik Hotel'
+        hotelName: process.env.HOTEL_NAME || 'AirVik Hotel',
+        currentYear: new Date().getFullYear().toString()
       });
       
       const textContent = await this.renderTemplate('verification-email', {
@@ -101,7 +102,8 @@ export class EmailService {
         apiVerificationUrl: apiVerificationUrl,
         expiresIn: '24 hours',
         supportEmail: process.env.SUPPORT_EMAIL || 'support@hotel.com',
-        hotelName: process.env.HOTEL_NAME || 'AirVik Hotel'
+        hotelName: process.env.HOTEL_NAME || 'AirVik Hotel',
+        currentYear: new Date().getFullYear().toString()
       }, 'txt');
       
       // Create mail options
@@ -160,7 +162,8 @@ export class EmailService {
         loginUrl: `${process.env.FRONTEND_URL}/login`,
         profileUrl: `${process.env.FRONTEND_URL}/profile`,
         supportEmail: process.env.SUPPORT_EMAIL || 'support@hotel.com',
-        hotelName: process.env.HOTEL_NAME || 'AirVik Hotel'
+        hotelName: process.env.HOTEL_NAME || 'AirVik Hotel',
+        currentYear: new Date().getFullYear().toString()
       }, 'txt');
       
       // Send confirmation email

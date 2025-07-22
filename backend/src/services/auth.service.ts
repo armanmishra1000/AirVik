@@ -340,8 +340,12 @@ export class AuthService {
    * Phone number format validation
    */
   private isValidPhoneNumber(phone: string): boolean {
-    // TODO: Implement international phone number validation
-    return /^[\+]?[1-9][\d]{0,15}$/.test(phone);
+    // Remove all non-digit characters except + for validation
+    const cleanPhone = phone.replace(/[^\d+]/g, '');
+    
+    // Allow international format: +1234567890 or domestic: 1234567890 or 01234567890
+    // Must be 7-15 digits (excluding country code +)
+    return /^[\+]?[0-9]{7,15}$/.test(cleanPhone);
   }
 }
 

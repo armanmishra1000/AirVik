@@ -159,7 +159,7 @@ export class AuthService {
         }
 
         this.retryCount = 0;
-        return Promise.reject(this.createAuthError(error));
+        return Promise.reject(this.handleApiError(error, 'An unexpected error occurred'));
       }
     );
   }
@@ -267,7 +267,8 @@ export class AuthService {
         if (key === 'request' || key === 'config') return '[omitted]';
         return value;
       }, 2));
-      throw this.handleApiError(error, 'Registration failed');
+      // Re-throw the error as-is since the response interceptor has already processed it
+      throw error;
     }
   }
 
@@ -579,44 +580,69 @@ export class AuthService {
     
     // API error response
     const response = error.response.data;
+    const status = error.response.status;
     
-    // Handle validation errors
-    if (response?.code === 'VALIDATION_ERROR') {
+    // Handle standardized API response format {success: false, message: string, errors: Array}
+    if (response && typeof response === 'object') {
+      // Handle validation errors with specific field errors
+      if (status === 400 && response.errors && Array.isArray(response.errors) && response.errors.length > 0) {
+        const firstError = response.errors[0];
+        return {
+          statusCode: 400,
+          message: firstError.message || response.message || 'Validation error',
+          field: firstError.field
+        };
+      }
+      
+      // Handle rate limiting
+      if (status === 429) {
+        const retryAfter = error.response.headers['retry-after'] || '60';
+        return this.createRateLimitError(error, parseInt(retryAfter, 10));
+      }
+      
+      // Handle authentication errors
+      if (status === 401) {
+        return {
+          statusCode: 401,
+          message: response.message || 'Authentication required'
+        };
+      }
+      
+      // Handle not found errors
+      if (status === 404) {
+        return {
+          statusCode: 404,
+          message: response.message || 'Resource not found'
+        };
+      }
+      
+      // Handle other API errors with standardized format
       return {
-        statusCode: 400,
-        message: response.error || 'Validation error',
+        statusCode: status || 500,
+        message: response.message || defaultMessage,
         field: response.field
       };
     }
     
-    // Handle rate limiting
-    if (error.response.status === 429) {
-      const retryAfter = error.response.headers['retry-after'] || '60';
-      return this.createRateLimitError(error, parseInt(retryAfter, 10));
-    }
-    
-    // Handle authentication errors
-    if (error.response.status === 401) {
-      return {
-        statusCode: 401,
-        message: response?.error || 'Authentication required'
-      };
-    }
-    
-    // Handle not found errors
-    if (error.response.status === 404) {
-      return {
-        statusCode: 404,
-        message: response?.error || 'Resource not found'
-      };
-    }
-    
-    // Generic error
+    // Fallback for non-standardized responses
     return {
-      statusCode: error.response?.status || 500,
-      message: response?.error || response?.message || defaultMessage,
-      field: response?.field
+      statusCode: status || 500,
+      message: defaultMessage
     };
+  }
+
+  /**
+   * Helper method to throw validation errors as AuthError objects
+   */
+  private throwValidationError(message: string, field: string): never {
+    const authError = {
+      statusCode: 400,
+      message,
+      field
+    };
+    const errorInstance = new Error(message);
+    Object.assign(errorInstance, authError);
+    throw errorInstance;
   }
 
   /**
@@ -628,39 +654,44 @@ export class AuthService {
     // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!data.email || !emailRegex.test(data.email)) {
-      throw new Error('Please provide a valid email address');
+      this.throwValidationError('Please provide a valid email address', 'email');
     }
 
     // Password validation - must match backend regex exactly: at least 8 chars with uppercase, lowercase, and number
     const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
     if (!data.password || !passwordRegex.test(data.password)) {
-      throw new Error('Password must be at least 8 characters with uppercase, lowercase, and number');
+      this.throwValidationError('Password must be at least 8 characters with uppercase, lowercase, and number', 'password');
     }
 
     // First name validation
     if (!data.firstName || data.firstName.length < 2 || data.firstName.length > 50) {
-      throw new Error('First name must be 2-50 characters');
+      this.throwValidationError('First name must be 2-50 characters', 'firstName');
     }
     // Check first name contains only letters and spaces
     const nameRegex = /^[a-zA-Z\s]+$/;
     if (!nameRegex.test(data.firstName)) {
-      throw new Error('First name must contain only letters and spaces');
+      this.throwValidationError('First name must contain only letters and spaces', 'firstName');
     }
 
     // Last name validation
     if (!data.lastName || data.lastName.length < 2 || data.lastName.length > 50) {
-      throw new Error('Last name must be 2-50 characters');
+      this.throwValidationError('Last name must be 2-50 characters', 'lastName');
     }
     // Check last name contains only letters and spaces
     if (!nameRegex.test(data.lastName)) {
-      throw new Error('Last name must contain only letters and spaces');
+      this.throwValidationError('Last name must contain only letters and spaces', 'lastName');
     }
 
     // Phone number validation (optional)
     if (data.phoneNumber && data.phoneNumber.trim() !== '') {
-      const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
-      if (!phoneRegex.test(data.phoneNumber)) {
-        throw new Error('Please provide a valid phone number');
+      // Remove all non-digit characters except + for validation
+      const cleanPhone = data.phoneNumber.replace(/[^\d+]/g, '');
+      
+      // Allow international format: +1234567890 or domestic: 1234567890 or 01234567890
+      // Must be 7-15 digits (excluding country code +)
+      const phoneRegex = /^[\+]?[0-9]{7,15}$/;
+      if (!phoneRegex.test(cleanPhone)) {
+        this.throwValidationError('Please provide a valid phone number (7-15 digits)', 'phoneNumber');
       }
     }
   }
@@ -678,10 +709,15 @@ export class AuthService {
       throw new Error('Last name must be between 2 and 50 characters');
     }
 
-    if (data.phoneNumber) {
-      const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
-      if (!phoneRegex.test(data.phoneNumber)) {
-        throw new Error('Please provide a valid phone number');
+    if (data.phoneNumber && data.phoneNumber.trim() !== '') {
+      // Remove all non-digit characters except + for validation
+      const cleanPhone = data.phoneNumber.replace(/[^\d+]/g, '');
+      
+      // Allow international format: +1234567890 or domestic: 1234567890 or 01234567890
+      // Must be 7-15 digits (excluding country code +)
+      const phoneRegex = /^[\+]?[0-9]{7,15}$/;
+      if (!phoneRegex.test(cleanPhone)) {
+        throw new Error('Please provide a valid phone number (7-15 digits)');
       }
     }
   }

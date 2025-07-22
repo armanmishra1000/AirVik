@@ -3,6 +3,7 @@
 import React, { useEffect, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '../../contexts/AuthContext';
+import VerificationPrompt from './VerificationPrompt';
 
 interface RouteGuardProps {
   children: ReactNode;
@@ -10,6 +11,12 @@ interface RouteGuardProps {
   requireVerification?: boolean;
   redirectTo?: string;
   fallback?: ReactNode;
+  showVerificationPrompt?: boolean;
+  verificationPromptProps?: {
+    title?: string;
+    message?: string;
+    feature?: string;
+  };
 }
 
 const RouteGuard: React.FC<RouteGuardProps> = ({
@@ -18,6 +25,8 @@ const RouteGuard: React.FC<RouteGuardProps> = ({
   requireVerification = false,
   redirectTo,
   fallback,
+  showVerificationPrompt = false,
+  verificationPromptProps,
 }) => {
   const router = useRouter();
   const pathname = usePathname();
@@ -35,8 +44,16 @@ const RouteGuard: React.FC<RouteGuardProps> = ({
 
     // Check verification requirement
     if (requireVerification && user && user.status !== 'verified') {
-      router.push('/auth/resend-verification');
-      return;
+      if (showVerificationPrompt) {
+        // Don't redirect, show prompt instead
+        return;
+      } else {
+        // Redirect to resend verification page
+        const email = user.email || localStorage.getItem('userEmail') || '';
+        const url = email ? `/auth/resend-verification?email=${encodeURIComponent(email)}` : '/auth/resend-verification';
+        router.push(url);
+        return;
+      }
     }
 
     // If user is authenticated but trying to access auth pages, redirect to home
@@ -85,6 +102,21 @@ const RouteGuard: React.FC<RouteGuardProps> = ({
   }
 
   if (requireVerification && user && user.status !== 'verified') {
+    if (showVerificationPrompt) {
+      // Show verification prompt instead of redirecting
+      return (
+        <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+          <div className="sm:mx-auto sm:w-full sm:max-w-2xl">
+            <VerificationPrompt
+              title={verificationPromptProps?.title}
+              message={verificationPromptProps?.message}
+              feature={verificationPromptProps?.feature}
+              className="mx-4"
+            />
+          </div>
+        </div>
+      );
+    }
     return null; // Will redirect in useEffect
   }
 
@@ -103,6 +135,12 @@ export const withAuth = <P extends object>(
     requireAuth?: boolean;
     requireVerification?: boolean;
     redirectTo?: string;
+    showVerificationPrompt?: boolean;
+    verificationPromptProps?: {
+      title?: string;
+      message?: string;
+      feature?: string;
+    };
   } = {}
 ) => {
   const WrappedComponent: React.FC<P> = (props) => {
@@ -111,6 +149,8 @@ export const withAuth = <P extends object>(
         requireAuth={options.requireAuth}
         requireVerification={options.requireVerification}
         redirectTo={options.redirectTo}
+        showVerificationPrompt={options.showVerificationPrompt}
+        verificationPromptProps={options.verificationPromptProps}
       >
         <Component {...props} />
       </RouteGuard>
@@ -131,6 +171,22 @@ export const AuthGuard: React.FC<{ children: ReactNode }> = ({ children }) => (
 
 export const VerifiedGuard: React.FC<{ children: ReactNode }> = ({ children }) => (
   <RouteGuard requireAuth={true} requireVerification={true}>
+    {children}
+  </RouteGuard>
+);
+
+// Guard for booking features (requires verification with prompt)
+export const BookingGuard: React.FC<{ children: ReactNode }> = ({ children }) => (
+  <RouteGuard 
+    requireAuth={true} 
+    requireVerification={true}
+    showVerificationPrompt={true}
+    verificationPromptProps={{
+      title: 'Email Verification Required for Booking',
+      feature: 'booking features',
+      message: 'To make reservations and manage bookings, please verify your email address first.'
+    }}
+  >
     {children}
   </RouteGuard>
 );
