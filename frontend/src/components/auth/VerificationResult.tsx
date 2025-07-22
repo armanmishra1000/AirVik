@@ -62,17 +62,23 @@ const VerificationResult: React.FC<VerificationResultProps> = ({
     try {
       setVerificationState('loading');
       
+      // Call the API endpoint to verify the email token
       const response = await authService.verifyEmail(token);
       
       if (response.success && response.data) {
         setUser(response.data);
         setVerificationState('success');
         
+        // Store the user data in local storage (but not auth token since login is still required)
+        localStorage.setItem('userEmail', response.data.email);
+        
         if (onSuccess) {
           onSuccess(response.data);
         }
+        
+        console.log('Email verification successful:', response.data);
       } else {
-        throw new Error('Verification failed');
+        throw new Error(response.message || 'Verification failed');
       }
     } catch (error) {
       console.error('Email verification error:', error);
@@ -86,6 +92,11 @@ const VerificationResult: React.FC<VerificationResultProps> = ({
       } else if (authError.statusCode === 404 || authError.message?.includes('invalid')) {
         setVerificationState('invalid');
         setError('Invalid verification link. Please check your email or request a new link.');
+      } else if (authError.message?.includes('already verified')) {
+        setVerificationState('success');
+        setError('Your email has already been verified. You can now log in to your account.');
+        // Auto-redirect to login since already verified
+        setTimeout(() => handleRedirectToLogin(), 3000);
       } else {
         setVerificationState('error');
         setError(authError.message || 'Verification failed. Please try again.');

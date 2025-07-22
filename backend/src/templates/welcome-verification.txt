@@ -1,0 +1,28 @@
+Welcome to {{hotelName}}!
+
+Hello, {{firstName}}!
+
+Thank you for registering with {{hotelName}}. We're excited to have you join us!
+To complete your registration and start booking your dream accommodations, please verify your email address.
+
+VERIFY MY EMAIL: {{verificationUrl}}
+
+If the link above doesn't work, you can copy and paste the following link into your browser:
+{{verificationUrl}}
+
+IMPORTANT: This verification link will expire in {{expiresIn}}. Please verify your email as soon as possible.
+
+If you didn't create an account with us, you can safely ignore this email.
+
+We look forward to helping you find the perfect accommodations for your next trip!
+
+Best regards,
+The {{hotelName}} Team
+
+---
+
+Need assistance? Contact our support team at {{supportEmail}}
+
+© {{currentYear}} {{hotelName}}. All rights reserved.
+
+This email was sent to {{email}}. Please do not reply to this email as it is automatically generated.

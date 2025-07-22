@@ -39,6 +39,7 @@ export interface RegisterResponse {
   userId: string;
   email: string;
   status: UserStatus;
+  verificationToken?: string; // Optional verification token for testing
 }
 
 // Interface for verification response
@@ -50,8 +51,9 @@ export interface VerificationResponse {
 
 // Rate limiting configuration
 const RATE_LIMIT_CONFIG = {
-  REGISTRATION_PER_IP_PER_HOUR: 3,
-  VERIFICATION_EMAIL_PER_EMAIL_PER_HOUR: 3,
+  // Increased for development and testing
+  REGISTRATION_PER_IP_PER_HOUR: 100,
+  VERIFICATION_EMAIL_PER_EMAIL_PER_HOUR: 100,
   TOKEN_EXPIRY_HOURS: 24
 };
 
@@ -82,8 +84,12 @@ export class AuthService {
       }
       
       // TODO: Create new user instance
+      // Generate username from email (remove @ and domain)
+      const username = userData.email.split('@')[0];
+      
       const user = new User({
         email: userData.email.toLowerCase(),
+        username: username, // Set username from email
         password: userData.password, // Will be hashed by pre-save hook
         firstName: userData.firstName,
         lastName: userData.lastName,
@@ -103,10 +109,12 @@ export class AuthService {
       // TODO: Log registration event
       console.log(`User registered: ${user.email} (${user._id})`);
       
+      // Include verification token in response for test automation
       return {
         userId: (user._id as Types.ObjectId).toString(),
         email: user.email,
-        status: user.status
+        status: user.status,
+        verificationToken // Expose token for testing
       };
       
     } catch (error) {

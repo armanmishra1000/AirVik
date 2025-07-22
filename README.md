@@ -1,7 +1,7 @@
-# Airvik - Hotel Booking System
+# AirVik - Hotel Booking System
 
 ## Overview
-Airvik is a modern hotel booking and management system built with Next.js, Node.js, and PostgreSQL. This full-stack application provides a complete solution for hotel room booking, user management, and payment processing.
+AirVik is a modern hotel booking and management system built with Next.js, Node.js, and MongoDB. This full-stack application provides a complete solution for hotel room booking, user management, and payment processing.
 
 ## Tech Stack
 
@@ -19,9 +19,10 @@ Airvik is a modern hotel booking and management system built with Next.js, Node.
 - Node.js with Express
 - TypeScript
 - MongoDB database with Mongoose ODM
-- JWT for authentication
+- JWT for authentication with refresh tokens
 - bcrypt for password hashing
-- UUID for secure IDs
+- Email verification via SendGrid
+- Stripe for payment processing
 
 ## Prerequisites
 Before you begin, ensure you have the following installed:
@@ -75,6 +76,8 @@ mongosh
 exit
 ```
 
+Alternatively, you can use MongoDB Atlas as a cloud-hosted solution.
+
 ### 4. Backend Setup
 ```bash
 cd backend
@@ -83,14 +86,34 @@ cd backend
 npm install
 
 # Create .env file (if not exists)
-echo "PORT=5000
-MONGODB_URI=mongodb://localhost:27017/airvik
-JWT_SECRET=your_jwt_secret_key
+cat > .env << EOL
+# Server Configuration
+PORT=5000
 NODE_ENV=development
-CLIENT_URL=http://localhost:3000" > .env
+API_URL=http://localhost:5000
+FRONTEND_URL=http://localhost:3000
 
-# Run database migrations
-psql -d airvik -f migrations/001_create_users_table.sql
+# MongoDB Configuration
+MONGODB_URI=mongodb://localhost:27017/airvik
+
+# Email Configuration
+SMTP_HOST=smtp-relay.brevo.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your_smtp_user
+SMTP_PASS=your_smtp_password
+FROM_EMAIL=noreply@airvik.com
+
+# Hotel Information
+HOTEL_NAME=AirVik Hotel
+SUPPORT_EMAIL=support@airvik.com
+
+# JWT Configuration
+JWT_SECRET=your_jwt_secret_key
+JWT_REFRESH_SECRET=your_jwt_refresh_secret_key
+JWT_EXPIRY=15m
+JWT_REFRESH_EXPIRY=7d
+EOL
 
 # Start development server
 npm run dev
@@ -105,7 +128,7 @@ npm install
 
 # Create .env.local file (if not exists)
 echo "NEXT_PUBLIC_API_URL=http://localhost:5000/api
-NEXT_PUBLIC_APP_NAME=Airvik" > .env.local
+NEXT_PUBLIC_APP_NAME=AirVik" > .env.local
 
 # Start development server
 npm run dev
@@ -129,26 +152,38 @@ The frontend application will run on http://localhost:3000
 
 ## Project Structure
 ```
-airvik/
+AirVik/
 ├── backend/                # Node.js Express API
-│   ├── api/                # API routes and controllers
-│   ├── config/             # Configuration files
-│   ├── migrations/         # Database migrations
-│   ├── middleware/         # Express middleware
-│   ├── utils/              # Utility functions
+│   ├── src/
+│   │   ├── controllers/    # Request handlers
+│   │   ├── services/       # Business logic
+│   │   ├── models/         # MongoDB schemas
+│   │   ├── routes/         # API routes
+│   │   ├── middleware/     # Auth, validation
+│   │   ├── utils/          # Helpers
+│   │   └── config/         # Configuration
 │   ├── server.ts           # Express server setup
 │   ├── package.json        # Backend dependencies
 │   └── tsconfig.json       # TypeScript configuration
 │
 ├── frontend/               # Next.js application
-│   ├── app/                # Next.js app directory
-│   ├── components/         # React components
-│   ├── services/           # API services
-│   ├── styles/             # Global styles
-│   └── package.json        # Frontend dependencies
+│   ├── src/
+│   │   ├── app/           # Next.js app directory
+│   │   ├── components/     # React components
+│   │   ├── hooks/         # Custom hooks
+│   │   ├── services/      # API calls
+│   │   ├── contexts/      # React contexts
+│   │   ├── types/         # TypeScript types
+│   │   └── utils/         # Frontend helpers
+│   ├── next.config.js
+│   ├── package.json        # Frontend dependencies
+│   └── tsconfig.json       # TypeScript configuration
 │
-├── features/               # Feature documentation
-└── docs/                   # Project documentation
+├── shared/                 # Shared code between frontend and backend
+│   └── types/              # Shared TypeScript types
+│
+├── docs/                   # Project documentation
+│   └── features/           # Feature documentation
 ```
 
 ## Available Scripts
@@ -157,33 +192,94 @@ airvik/
 - `npm run dev`: Start development server with hot-reload
 - `npm run build`: Build for production
 - `npm start`: Run production build
-- `npm run migrate`: Run database migrations
+- `npm run lint`: Run ESLint
+- `npm run test`: Run tests
 
 ### Frontend
 - `npm run dev`: Start development server
 - `npm run build`: Build for production
 - `npm start`: Run production build
 - `npm run lint`: Run ESLint
+- `npm run test`: Run tests
 
 ## API Endpoints
 
 ### Health Check
 - `GET /api/health`: Check if API is running
 
-### Authentication (to be implemented)
-- `POST /api/auth/register`: Register new user
-- `POST /api/auth/login`: Login user
-- `GET /api/auth/me`: Get current user
+### Authentication
+- `POST /api/v1/auth/register`: Register new user
+- `POST /api/v1/auth/verify-email`: Verify user email with token
+- `POST /api/v1/auth/resend-verification`: Resend verification email
+- `POST /api/v1/auth/login`: Login user
+- `POST /api/v1/auth/refresh-token`: Refresh access token
+- `POST /api/v1/auth/logout`: Logout user
+- `GET /api/v1/auth/me`: Get current user
+
+### User Management
+- `GET /api/v1/user/profile`: Get user profile
+- `PUT /api/v1/user/profile`: Update user profile
+
+### Room Management
+- `GET /api/v1/rooms`: Get all rooms
+- `GET /api/v1/rooms/:id`: Get room by ID
+- `POST /api/v1/rooms`: Create new room (admin)
+- `PUT /api/v1/rooms/:id`: Update room (admin)
+- `DELETE /api/v1/rooms/:id`: Delete room (admin)
+
+### Booking Management
+- `GET /api/v1/bookings`: Get user bookings
+- `GET /api/v1/bookings/:id`: Get booking by ID
+- `POST /api/v1/bookings`: Create new booking
+- `PUT /api/v1/bookings/:id`: Update booking
+- `DELETE /api/v1/bookings/:id`: Cancel booking
 
 ## Database Models
 
-The application uses MongoDB with Mongoose for data modeling. Models are defined in the `backend/models` directory.
+The application uses MongoDB with Mongoose for data modeling. Models are defined in the `backend/src/models` directory.
 
 ### Creating New Models
 
-1. Create a new model file in the `backend/models` directory
+1. Create a new model file in the `backend/src/models` directory
 2. Define your Mongoose schema and model
 3. Export the model for use in your application
+
+Example model structure:
+
+```typescript
+import mongoose, { Document, Schema } from 'mongoose';
+
+export interface IUser extends Document {
+  email: string;
+  firstName: string;
+  lastName: string;
+  password: string;
+  status: string;
+  verificationToken?: string;
+  verificationExpires?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const userSchema = new Schema<IUser>(
+  {
+    email: { type: String, required: true, unique: true },
+    firstName: { type: String, required: true },
+    lastName: { type: String, required: true },
+    password: { type: String, required: true },
+    status: { 
+      type: String, 
+      enum: ['unverified', 'verified', 'suspended'],
+      default: 'unverified'
+    },
+    verificationToken: String,
+    verificationExpires: Date
+  },
+  { timestamps: true }
+);
+
+export const User = mongoose.model<IUser>('User', userSchema);
+```
 
 ### Sharing Database Data
 
@@ -206,64 +302,96 @@ mongorestore ./dump
 
 ## Database Synchronization
 
-To ensure all team members have consistent database schemas, we use a migration system. Here's how it works:
+To ensure all team members have consistent database schemas, we use Mongoose schemas and models. MongoDB is schema-less by nature, but we enforce schemas through Mongoose.
 
-### Creating a New Migration
+### Schema Changes
 
-1. Create a new SQL file in the `backend/migrations` directory with a sequential number prefix:
-   ```
-   002_create_rooms_table.sql
-   003_create_bookings_table.sql
-   ```
+When making schema changes:
 
-2. Write your SQL statements in the file:
-   ```sql
-   -- Create rooms table
-   CREATE TABLE IF NOT EXISTS rooms (
-     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-     name VARCHAR(100) NOT NULL,
-     description TEXT,
-     price_per_night DECIMAL(10,2) NOT NULL,
-     -- other fields
-   );
-   ```
+1. Update the model file in `backend/src/models`
+2. Document the changes in the commit message
+3. Notify team members of the schema change
 
-### Running Migrations
+### Database Seeding
 
-After pulling the latest code with new migrations:
+For populating the database with initial data:
+
+1. Create seed scripts in `backend/src/seeds` directory
+2. Run seed scripts to populate the database with test data
 
 ```bash
-cd backend
-npm run migrate
+# Example seed script execution
+node dist/seeds/seed-users.js
 ```
-
-This will:
-1. Create a `migrations` table in your database if it doesn't exist
-2. Track which migrations have already been applied
-3. Only run new migrations that haven't been applied yet
 
 ### Sharing Test Data
 
 For sharing test data across the team:
 
-1. **Seed Files**: Create seed files in `backend/seeds/` directory
-2. **Data Exports**: Use `pg_dump` to export specific data:
+1. **Export Data**: Use MongoDB's export functionality:
    ```bash
-   pg_dump -t table_name -a -f seed_data.sql airvik
+   mongoexport --db airvik --collection users --out users.json
    ```
-3. **Data Imports**: Import shared data:
+
+2. **Import Data**: Import shared data:
    ```bash
-   psql -d airvik -f seed_data.sql
+   mongoimport --db airvik --collection users --file users.json
    ```
+
+3. **Seed Scripts**: Create and share seed scripts that can be run to populate the database with consistent test data
 
 ## Features
-- User Registration & Authentication
-- Room Management
-- Booking System
-- Payment Processing
-- Admin Dashboard
+- User Registration & Authentication with Email Verification
+- Room Management and Search
+- Booking System with Calendar Integration
+- Payment Processing with Stripe
+- Admin Dashboard for Hotel Management
+- User Profile Management
+- Responsive Design for Mobile and Desktop
+- Email Notifications for Bookings and Account Activities
+
+## Environment Variables
+
+### Backend (.env)
+```
+# Server Configuration
+PORT=5000
+NODE_ENV=development
+API_URL=http://localhost:5000
+FRONTEND_URL=http://localhost:3000
+
+# MongoDB Configuration
+MONGODB_URI=mongodb://localhost:27017/airvik
+
+# Email Configuration
+SMTP_HOST=smtp-relay.brevo.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your_smtp_user
+SMTP_PASS=your_smtp_password
+FROM_EMAIL=noreply@airvik.com
+
+# Hotel Information
+HOTEL_NAME=AirVik Hotel
+SUPPORT_EMAIL=support@airvik.com
+
+# JWT Configuration
+JWT_SECRET=your_jwt_secret_key
+JWT_REFRESH_SECRET=your_jwt_refresh_secret_key
+JWT_EXPIRY=15m
+JWT_REFRESH_EXPIRY=7d
+```
+
+### Frontend (.env.local)
+```
+NEXT_PUBLIC_API_URL=http://localhost:5000/api
+NEXT_PUBLIC_APP_NAME=AirVik
+```
 
 ## Team
-- Project Manager: Arman Mishra
+- Project Manager: Nirav Ramani
 - Backend Developers: [Team Members]
 - Frontend Developers: [Team Members]
+
+## License
+This project is licensed under the MIT License - see the LICENSE file for details.
