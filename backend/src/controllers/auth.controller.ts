@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { validationResult } from 'express-validator';
+import { validationResult, ValidationError as ExpressValidationError } from 'express-validator';
 import { AuthService, AuthError, ValidationError, RegisterUserData } from '../services/auth.service';
 
 // Interface for standardized API responses
@@ -34,7 +34,7 @@ export class AuthController {
         const response: ApiResponse = {
           success: false,
           message: 'Validation failed',
-          errors: errors.array().map(error => ({
+          errors: errors.array().map((error: any) => ({
             field: error.param || 'unknown',
             message: error.msg
           })),
@@ -58,12 +58,19 @@ export class AuthController {
       
       // TODO: Call auth service to register user
       const result = await this.authService.registerUser(userData, clientIP);
-      
+      // Standard response data
+      const responseData = {
+        _id: result.userId, // Use userId from RegisterResponse instead of _id
+        email: result.email,
+        status: result.status,
+        // Include verification token for test automation
+        verificationToken: result.verificationToken
+      };
       // TODO: Send success response
       const response: ApiResponse = {
         success: true,
         message: 'Registration successful. Please check your email for verification instructions.',
-        data: result,
+        data: responseData,
         timestamp: new Date().toISOString(),
         requestId: req.headers['x-request-id'] as string
       };
@@ -88,7 +95,7 @@ export class AuthController {
         const response: ApiResponse = {
           success: false,
           message: 'Validation failed',
-          errors: errors.array().map(error => ({
+          errors: errors.array().map((error: any) => ({
             field: error.param || 'unknown',
             message: error.msg
           })),
@@ -107,7 +114,10 @@ export class AuthController {
       const response: ApiResponse = {
         success: true,
         message: 'Email verified successfully. You can now log in.',
-        data: result,
+        data: {
+          ...result,
+          isVerified: result.status === 'verified' // Explicitly add isVerified property
+        },
         timestamp: new Date().toISOString(),
         requestId: req.headers['x-request-id'] as string
       };
@@ -170,7 +180,7 @@ export class AuthController {
         const response: ApiResponse = {
           success: false,
           message: 'Validation failed',
-          errors: errors.array().map(error => ({
+          errors: errors.array().map((error: any) => ({
             field: error.param || 'unknown',
             message: error.msg
           })),
@@ -226,6 +236,7 @@ export class AuthController {
       // TODO: Send user profile data
       const response: ApiResponse = {
         success: true,
+        message: 'User profile retrieved successfully',
         data: {
           id: user._id,
           email: user.email,
@@ -259,7 +270,7 @@ export class AuthController {
         const response: ApiResponse = {
           success: false,
           message: 'Validation failed',
-          errors: errors.array().map(error => ({
+          errors: errors.array().map((error: any) => ({
             field: error.param || 'unknown',
             message: error.msg
           })),

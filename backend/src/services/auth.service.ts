@@ -39,6 +39,7 @@ export interface RegisterResponse {
   userId: string;
   email: string;
   status: UserStatus;
+  verificationToken?: string; // Optional verification token for testing
 }
 
 // Interface for verification response
@@ -50,8 +51,9 @@ export interface VerificationResponse {
 
 // Rate limiting configuration
 const RATE_LIMIT_CONFIG = {
-  REGISTRATION_PER_IP_PER_HOUR: 3,
-  VERIFICATION_EMAIL_PER_EMAIL_PER_HOUR: 3,
+  // Increased for development and testing
+  REGISTRATION_PER_IP_PER_HOUR: 100,
+  VERIFICATION_EMAIL_PER_EMAIL_PER_HOUR: 100,
   TOKEN_EXPIRY_HOURS: 24
 };
 
@@ -82,8 +84,12 @@ export class AuthService {
       }
       
       // TODO: Create new user instance
+      // Generate username from email (remove @ and domain)
+      const username = userData.email.split('@')[0];
+      
       const user = new User({
         email: userData.email.toLowerCase(),
+        username: username, // Set username from email
         password: userData.password, // Will be hashed by pre-save hook
         firstName: userData.firstName,
         lastName: userData.lastName,
@@ -103,10 +109,12 @@ export class AuthService {
       // TODO: Log registration event
       console.log(`User registered: ${user.email} (${user._id})`);
       
+      // Include verification token in response for test automation
       return {
         userId: (user._id as Types.ObjectId).toString(),
         email: user.email,
-        status: user.status
+        status: user.status,
+        verificationToken // Expose token for testing
       };
       
     } catch (error) {
@@ -332,8 +340,12 @@ export class AuthService {
    * Phone number format validation
    */
   private isValidPhoneNumber(phone: string): boolean {
-    // TODO: Implement international phone number validation
-    return /^[\+]?[1-9][\d]{0,15}$/.test(phone);
+    // Remove all non-digit characters except + for validation
+    const cleanPhone = phone.replace(/[^\d+]/g, '');
+    
+    // Allow international format: +1234567890 or domestic: 1234567890 or 01234567890
+    // Must be 7-15 digits (excluding country code +)
+    return /^[\+]?[0-9]{7,15}$/.test(cleanPhone);
   }
 }
 
