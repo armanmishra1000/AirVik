@@ -10,7 +10,7 @@
 - Integration: 0/6 tasks
 
 ## Backend Progress
-- [ ] B1: Enhance MongoDB Schema
+- [x] B1: Enhance MongoDB Schema - Updated user model and created token models with validation
 - [ ] B2: Complete Service Layer
 - [ ] B3: Create JWT Middleware
 - [ ] B4: Complete API Controllers
@@ -41,9 +41,12 @@
 
 ## Files Created
 *Format: - path/to/file.ts: Brief description of purpose*
+- `backend/src/models/email-verification-token.model.ts`: Email verification token schema
+- `backend/src/models/refresh-token.model.ts`: JWT refresh token schema
 
 ## Files Modified  
 *Format: - path/to/file.ts: What was changed*
+- `backend/src/models/user.model.ts`: Enhanced with complete auth fields and password hashing
 
 ## Existing Files Analysis
 The following existing files will be enhanced rather than recreated:
