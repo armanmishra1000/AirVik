@@ -2,7 +2,6 @@ import mongoose, { Document, Schema } from 'mongoose';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 
-// User status enum
 // User role enum
 export enum UserRole {
   CUSTOMER = 'customer',
@@ -113,11 +112,10 @@ const UserSchema = new Schema<IUser>(
     trim: true,
     validate: {
       validator: function(phone: string) {
-        // TODO: Implement phone number format validation
         if (!phone) return true; // Optional field
-        return /^[\+]?[1-9][\d]{0,15}$/.test(phone);
+        return /^[\+]?[0-9]{7,15}$/.test(phone);
       },
-      message: 'Please provide a valid phone number'
+      message: 'Please provide a valid phone number (7-15 digits with optional country code)'
     }
   },
   
@@ -168,13 +166,10 @@ const UserSchema = new Schema<IUser>(
   timestamps: true, // Automatically adds createdAt and updatedAt
   toJSON: { 
     virtuals: true,
-    transform: function(doc, ret) {
-      // TODO: Remove sensitive fields from JSON output
-      delete ret.password;
-            delete ret.loginAttempts;
-      delete ret.lockoutUntil;
-      delete ret.__v;
-      return ret;
+    transform: function(doc, ret: Record<string, any>) {
+      // Remove sensitive fields from JSON output
+      const { password, loginAttempts, lockoutUntil, __v, ...safeRet } = ret;
+      return safeRet;
     }
   },
   toObject: { virtuals: true }
@@ -192,7 +187,7 @@ UserSchema.virtual('fullName').get(function(this: IUser) {
 
 // Pre-save hook for password hashing
 UserSchema.pre<IUser>('save', async function(next) {
-  // TODO: Implement password hashing logic
+  // Only hash password if it's modified or new
   if (!this.isModified('password')) return next();
   
   try {
@@ -206,17 +201,21 @@ UserSchema.pre<IUser>('save', async function(next) {
 
 // Instance method to compare passwords
 UserSchema.methods.comparePassword = async function(candidatePassword: string): Promise<boolean> {
-  // TODO: Implement password comparison using bcrypt
   return bcrypt.compare(candidatePassword, this.password);
 };
 
 // Instance method to generate email verification token
+UserSchema.methods.generateEmailVerificationToken = async function(): Promise<string> {
+  const token = crypto.randomBytes(32).toString('base64url');
+  return token;
+};
 
+// Instance method to check if account is locked
+UserSchema.methods.isAccountLocked = function(): boolean {
+  return this.lockoutUntil && new Date() < this.lockoutUntil;
+};
 
 // Create and export the User model
 export const User = mongoose.model<IUser>('User', UserSchema);
 
-// TODO: Add database connection setup
-// TODO: Add database migration scripts for indexes
-// TODO: Add user data seeding for development
-// TODO: Add schema versioning for future updates
+// No need to re-export IUser as it's already exported above
