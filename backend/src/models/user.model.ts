@@ -1,11 +1,13 @@
 import mongoose, { Document, Schema } from 'mongoose';
 import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 
 // User status enum
-export enum UserStatus {
-  UNVERIFIED = 'unverified',
-  VERIFIED = 'verified',
-  SUSPENDED = 'suspended'
+// User role enum
+export enum UserRole {
+  CUSTOMER = 'customer',
+  MANAGER = 'manager',
+  ADMIN = 'admin',
 }
 
 // User interface extending MongoDB Document
@@ -14,27 +16,38 @@ export interface IUser extends Document {
   password: string;
   firstName: string;
   lastName: string;
-  phoneNumber?: string;
-  status: UserStatus;
-  emailVerificationToken?: string;
-  emailVerificationTokenExpires?: Date;
-  emailVerificationTokenRequestCount: number;
-  lastEmailVerificationTokenRequest?: Date;
+  phone?: string;
+  dateOfBirth?: Date;
+  role: UserRole;
+  isEmailVerified: boolean;
+  isActive: boolean;
+  lastLoginAt?: Date;
+  loginAttempts: number;
+  lockoutUntil?: Date;
+  profileImage?: string;
+  preferences: {
+    newsletter: boolean;
+    notifications: boolean;
+    language: string;
+  };
+  metadata: {
+    registrationIP?: string;
+    userAgent?: string;
+    source?: string;
+  };
   createdAt: Date;
   updatedAt: Date;
-  lastLoginAt?: Date;
-  
+
   // Virtual fields
   fullName: string;
-  
+
   // Instance methods
   comparePassword(candidatePassword: string): Promise<boolean>;
-  generateEmailVerificationToken(): string;
-  isEmailVerificationTokenValid(token: string): boolean;
 }
 
 // User schema definition
-const UserSchema = new Schema<IUser>({
+const UserSchema = new Schema<IUser>(
+  {
   email: {
     type: String,
     required: [true, 'Email is required'],
@@ -95,7 +108,7 @@ const UserSchema = new Schema<IUser>({
     }
   },
   
-  phoneNumber: {
+  phone: {
     type: String,
     trim: true,
     validate: {
@@ -108,31 +121,45 @@ const UserSchema = new Schema<IUser>({
     }
   },
   
-  status: {
-    type: String,
-    enum: Object.values(UserStatus),
-    default: UserStatus.UNVERIFIED,
-    index: true
-  },
-  
-  emailVerificationToken: {
-    type: String,
-    sparse: true,
-    index: true
-  },
-  
-  emailVerificationTokenExpires: {
-    type: Date
-  },
-  
-  emailVerificationTokenRequestCount: {
-    type: Number,
-    default: 0
-  },
-  
-  lastEmailVerificationTokenRequest: {
-    type: Date
-  },
+  dateOfBirth: {
+      type: Date,
+    },
+    role: {
+      type: String,
+      enum: Object.values(UserRole),
+      default: UserRole.CUSTOMER,
+      index: true,
+    },
+    isEmailVerified: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
+      index: true,
+    },
+    loginAttempts: {
+      type: Number,
+      default: 0,
+    },
+    lockoutUntil: {
+      type: Date,
+    },
+    profileImage: {
+      type: String,
+    },
+    preferences: {
+      newsletter: { type: Boolean, default: false },
+      notifications: { type: Boolean, default: true },
+      language: { type: String, default: 'en' },
+    },
+    metadata: {
+      registrationIP: String,
+      userAgent: String,
+      source: String,
+    },
   
   lastLoginAt: {
     type: Date
@@ -144,7 +171,8 @@ const UserSchema = new Schema<IUser>({
     transform: function(doc, ret) {
       // TODO: Remove sensitive fields from JSON output
       delete ret.password;
-      delete ret.emailVerificationToken;
+            delete ret.loginAttempts;
+      delete ret.lockoutUntil;
       delete ret.__v;
       return ret;
     }
@@ -154,9 +182,8 @@ const UserSchema = new Schema<IUser>({
 
 // Indexes for performance
 UserSchema.index({ email: 1 }, { unique: true });
-UserSchema.index({ emailVerificationToken: 1 }, { sparse: true });
-UserSchema.index({ createdAt: -1 });
-UserSchema.index({ status: 1, createdAt: -1 });
+UserSchema.index({ role: 1 });
+UserSchema.index({ isEmailVerified: 1, isActive: 1 });
 
 // Virtual field for full name
 UserSchema.virtual('fullName').get(function(this: IUser) {
@@ -184,26 +211,7 @@ UserSchema.methods.comparePassword = async function(candidatePassword: string): 
 };
 
 // Instance method to generate email verification token
-UserSchema.methods.generateEmailVerificationToken = function(): string {
-  // TODO: Implement secure token generation using crypto.randomBytes
-  const crypto = require('crypto');
-  const token = crypto.randomBytes(32).toString('hex');
-  
-  this.emailVerificationToken = token;
-  this.emailVerificationTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-  
-  return token;
-};
 
-// Instance method to validate email verification token
-UserSchema.methods.isEmailVerificationTokenValid = function(token: string): boolean {
-  // TODO: Implement token validation logic
-  return (
-    this.emailVerificationToken === token &&
-    this.emailVerificationTokenExpires &&
-    this.emailVerificationTokenExpires > new Date()
-  );
-};
 
 // Create and export the User model
 export const User = mongoose.model<IUser>('User', UserSchema);
