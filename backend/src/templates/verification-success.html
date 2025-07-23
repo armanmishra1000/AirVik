@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Email Verified Successfully - {{hotelName}}</title>
+  <style>
+    /* Reset styles */
+    body, html {
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      background-color: #f9f9f9;
+    }
+    
+    /* Container */
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    }
+    
+    /* Header */
+    .header {
+      background: linear-gradient(135deg, #2ecc71, #27ae60);
+      padding: 30px 20px;
+      text-align: center;
+      color: white;
+    }
+    
+    .header h1 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 600;
+    }
+    
+    .success-icon {
+      font-size: 48px;
+      margin-bottom: 10px;
+    }
+    
+    .logo {
+      max-width: 150px;
+      margin-bottom: 15px;
+    }
+    
+    /* Content */
+    .content {
+      padding: 30px;
+      background: #ffffff;
+    }
+    
+    .greeting {
+      font-size: 22px;
+      font-weight: 500;
+      margin-bottom: 20px;
+    }
+    
+    .message {
+      margin-bottom: 25px;
+      font-size: 16px;
+    }
+    
+    /* Buttons */
+    .button-container {
+      text-align: center;
+      margin: 30px 0;
+    }
+    
+    .button {
+      display: inline-block;
+      background: #2ecc71;
+      color: white;
+      padding: 14px 30px;
+      text-decoration: none;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 16px;
+      margin: 0 10px 10px 0;
+      transition: background-color 0.3s;
+    }
+    
+    .button.secondary {
+      background: #3498db;
+    }
+    
+    .button:hover {
+      background: #27ae60;
+    }
+    
+    .button.secondary:hover {
+      background: #2980b9;
+    }
+    
+    /* Features */
+    .features {
+      margin: 30px 0;
+      padding: 20px;
+      background-color: #f5f7fa;
+      border-radius: 8px;
+    }
+    
+    .feature {
+      margin-bottom: 15px;
+      padding-left: 25px;
+      position: relative;
+    }
+    
+    .feature:before {
+      content: "✓";
+      position: absolute;
+      left: 0;
+      color: #2ecc71;
+      font-weight: bold;
+    }
+    
+    /* Footer */
+    .footer {
+      padding: 20px;
+      text-align: center;
+      background-color: #f5f5f5;
+      color: #666;
+      font-size: 12px;
+      border-top: 1px solid #eeeeee;
+    }
+    
+    .footer p {
+      margin: 5px 0;
+    }
+    
+    .social-links {
+      margin: 15px 0;
+    }
+    
+    .social-link {
+      display: inline-block;
+      margin: 0 10px;
+      color: #2ecc71;
+      text-decoration: none;
+    }
+    
+    /* Responsive */
+    @media only screen and (max-width: 600px) {
+      .container {
+        width: 100%;
+        border-radius: 0;
+      }
+      
+      .header {
+        padding: 20px 15px;
+      }
+      
+      .content {
+        padding: 20px;
+      }
+      
+      .button {
+        display: block;
+        margin: 10px auto;
+        text-align: center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="success-icon">✓</div>
+      <!-- <img src="{{logoUrl}}" alt="{{hotelName}}" class="logo"> -->
+      <h1>Email Verified Successfully!</h1>
+    </div>
+    
+    <div class="content">
+      <h2 class="greeting">Congratulations, {{firstName}}!</h2>
+      
+      <p class="message">
+        Your email address <strong>{{email}}</strong> has been successfully verified. Your account is now fully activated, and you can start enjoying all the features of {{hotelName}}.
+      </p>
+      
+      <div class="button-container">
+        <a href="{{loginUrl}}" class="button">Log In Now</a>
+        <a href="{{profileUrl}}" class="button secondary">View Your Profile</a>
+      </div>
+      
+      <div class="features">
+        <h3>What you can do now:</h3>
+        <div class="feature">Browse available rooms and accommodations</div>
+        <div class="feature">Make reservations with instant confirmation</div>
+        <div class="feature">Manage your bookings in one place</div>
+        <div class="feature">Access exclusive member-only deals</div>
+        <div class="feature">Earn rewards with every stay</div>
+      </div>
+      
+      <p class="message">
+        Thank you for choosing {{hotelName}}. We're committed to making your stay as comfortable and enjoyable as possible.
+      </p>
+      
+      <p class="message">
+        If you have any questions or need assistance, our customer support team is always ready to help.
+      </p>
+      
+      <p class="message">
+        Best regards,<br>
+        The {{hotelName}} Team
+      </p>
+    </div>
+    
+    <div class="footer">
+      <p>Need assistance? Contact our support team at <a href="mailto:{{supportEmail}}">{{supportEmail}}</a></p>
+      
+      <div class="social-links">
+        <a href="#" class="social-link">Facebook</a>
+        <a href="#" class="social-link">Twitter</a>
+        <a href="#" class="social-link">Instagram</a>
+      </div>
+      
+      <p>&copy; {{currentYear}} {{hotelName}}. All rights reserved.</p>
+      
+      <p>
+        This email was sent to {{email}}. Please do not reply to this email as it is automatically generated.
+      </p>
+    </div>
+  </div>
+</body>
+</html>

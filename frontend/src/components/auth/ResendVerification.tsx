@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { authService } from '../../services/auth.service';
-import { AuthError } from '../../types/auth.types';
+import { AuthError, VerificationRateLimitInfo, ResendVerificationResponse } from '../../types/auth.types';
 import { validateEmail } from '../../utils/validation';
 
 interface ResendVerificationProps {
@@ -20,9 +20,13 @@ const ResendVerification: React.FC<ResendVerificationProps> = ({
   className = ''
 }) => {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  
+  // Get email from URL parameters if available
+  const emailFromUrl = searchParams.get('email') || '';
   
   // State management
-  const [email, setEmail] = useState(initialEmail);
+  const [email, setEmail] = useState(initialEmail || emailFromUrl);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -86,44 +90,80 @@ const ResendVerification: React.FC<ResendVerificationProps> = ({
     setErrorMessage(null);
 
     try {
-      await authService.resendVerificationEmail(email);
+      // Call the API endpoint to resend verification email
+      const response = await authService.resendVerificationEmail(email);
       
-      setSuccessMessage(
-        `Verification email sent successfully to ${email}. Please check your inbox and spam folder.`
-      );
-      
-      // Set rate limiting
-      setCanResend(false);
-      setTimeRemaining(60); // 60 seconds cooldown
-      
-      if (onSuccess) {
-        onSuccess(email);
+      if (response.success) {
+        // Keep the email for potential future resends
+        setSuccessMessage(
+          `Verification email sent successfully to ${email}. Please check your inbox and spam folder.`
+        );
+        
+        // Set rate limiting based on API response or default to 60 seconds
+        const responseData = response.data as ResendVerificationResponse | undefined;
+        const cooldownPeriod = responseData?.cooldown || 60;
+        setCanResend(false);
+        setTimeRemaining(cooldownPeriod);
+        
+        // If API provides rate limit info, use it
+        if (responseData?.rateLimitInfo) {
+          setRateLimitInfo({
+            attempts: responseData.rateLimitInfo.attempts,
+            maxAttempts: responseData.rateLimitInfo.maxAttempts,
+            resetTime: new Date(responseData.rateLimitInfo.resetTime)
+          });
+        }
+        
+        // Store email in localStorage for convenience
+        localStorage.setItem('userEmail', email);
+        
+        if (onSuccess) {
+          onSuccess(email);
+        }
+      } else {
+        // Handle unexpected success:false response
+        throw new Error(response.message || 'Failed to send verification email');
       }
     } catch (error) {
       console.error('Resend verification error:', error);
       
       const authError = error as AuthError;
       
-      // Handle rate limiting
+      // Handle specific backend error responses
       if (authError.statusCode === 429) {
-        const rateLimitMessage = authError.message || 'Too many requests. Please wait before trying again.';
-        setErrorMessage(rateLimitMessage);
+        const retryAfter = authError.retryAfter || 60;
+        setCanResend(false);
+        setTimeRemaining(retryAfter);
+        setErrorMessage(
+          `Too many requests. Please wait ${retryAfter} seconds before trying again.`
+        );
         
-        // Extract rate limit info if available
-        if (authError.message?.includes('attempts')) {
+        // Set rate limit info if available
+        if (authError.rateLimitInfo) {
           setRateLimitInfo({
-            attempts: 3, // Default values, should come from API
-            maxAttempts: 5,
-            resetTime: new Date(Date.now() + 15 * 60 * 1000) // 15 minutes
+            attempts: authError.rateLimitInfo.attempts,
+            maxAttempts: authError.rateLimitInfo.maxAttempts,
+            resetTime: new Date(authError.rateLimitInfo.resetTime)
           });
         }
-        
-        setCanResend(false);
-        setTimeRemaining(300); // 5 minutes for rate limiting
       } else if (authError.statusCode === 404) {
-        setErrorMessage('Email address not found. Please check your email or create a new account.');
+        setErrorMessage('User not found. Please check your email address or create a new account.');
       } else if (authError.statusCode === 400) {
-        setErrorMessage('This email is already verified. You can proceed to login.');
+        if (authError.message?.toLowerCase().includes('already verified')) {
+          setErrorMessage('Your email is already verified. You can log in to your account.');
+          // Auto-redirect to login after 3 seconds
+          setTimeout(() => handleGoToLogin(), 3000);
+        } else if (authError.message?.toLowerCase().includes('validation')) {
+          setErrorMessage('Please provide a valid email address.');
+          setEmailError('Invalid email format');
+        } else {
+          setErrorMessage(authError.message || 'Invalid request. Please check your email address.');
+        }
+      } else if (authError.statusCode === 409) {
+        setErrorMessage('Your email is already verified. You can log in to your account.');
+        setTimeout(() => handleGoToLogin(), 3000);
+      } else if (authError.isNetworkError) {
+        setErrorMessage('Network error. Please check your connection and try again.');
       } else {
         setErrorMessage(authError.message || 'Failed to send verification email. Please try again.');
       }
