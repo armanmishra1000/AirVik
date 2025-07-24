@@ -22,6 +22,24 @@ export enum TokenType {
   PASSWORD_RESET = 'password_reset'
 }
 
+// JWT Token interface
+export interface JwtToken {
+  token: string;
+  expiresAt: string; // ISO date string
+}
+
+// Token pair interface for authentication
+export interface TokenPair {
+  accessToken: JwtToken;
+  refreshToken: JwtToken;
+}
+
+// Login response interface
+export interface LoginResponse {
+  user: User;
+  tokens: TokenPair;
+}
+
 // User interface matching backend MongoDB schema exactly
 export interface User {
   id: string; // MongoDB _id converted to string
@@ -68,6 +86,23 @@ export interface VerifyEmailRequest {
 // Resend verification email request interface
 export interface ResendVerificationRequest {
   email: string;
+}
+
+// Change password request interface
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
+}
+
+// Request password reset request interface
+export interface RequestPasswordResetRequest {
+  email: string;
+}
+
+// Password reset request interface
+export interface PasswordResetRequest {
+  token: string;
+  newPassword: string;
 }
 
 // Profile update request interface
@@ -175,12 +210,18 @@ export interface ProfileFormState extends FormState {
   isEditing: boolean;
 }
 
+// Authentication status type
+export type AuthStatusType = 'idle' | 'loading' | 'authenticated' | 'unauthenticated' | 'verification_required' | 'error';
+
 // Authentication state interface
 export interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   error: AuthError | null;
+  status: AuthStatusType;
+  isVerified: boolean;
+  lastActivity: string; // ISO date string
 }
 
 // Authentication context interface
