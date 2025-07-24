@@ -21,7 +21,7 @@ interface TemplateData {
 }
 
 export class EmailService {
-  private transporter: nodemailer.Transporter;
+  private transporter: nodemailer.Transporter | null = null;
   private config: EmailConfig;
   
   constructor() {
@@ -43,10 +43,23 @@ export class EmailService {
   /**
    * Initialize nodemailer transporter
    */
+  /**
+   * Check if transporter is initialized
+   * @throws {Error} If transporter is not initialized
+   */
+  private ensureTransporterInitialized(): void {
+    if (!this.transporter) {
+      throw new Error('Email transporter is not initialized. Please check your email configuration.');
+    }
+  }
+
+  /**
+   * Initialize nodemailer transporter
+   */
   private initializeTransporter(): void {
     try {
       // TODO: Create nodemailer transporter with configuration
-      this.transporter = nodemailer.createTransporter({
+      this.transporter = nodemailer.createTransport({
         host: this.config.host,
         port: this.config.port,
         secure: this.config.secure,
@@ -57,7 +70,8 @@ export class EmailService {
       });
       
       // TODO: Verify transporter connection
-      this.transporter.verify((error, success) => {
+      this.ensureTransporterInitialized();
+      this.transporter!.verify((error, success) => {
         if (error) {
           console.error('Email transporter verification failed:', error);
         } else {
@@ -116,7 +130,8 @@ export class EmailService {
         text: textContent
       };
       
-      const info = await this.transporter.sendMail(mailOptions);
+      this.ensureTransporterInitialized();
+      const info = await this.transporter!.sendMail(mailOptions);
       
       // TODO: Log email sent
       console.log(`Verification email sent to ${user.email}:`, info.messageId);
@@ -128,6 +143,111 @@ export class EmailService {
     }
   }
   
+  /**
+   * Send password reset email with reset link
+   */
+  async sendPasswordResetEmail(user: IUser, resetToken: string): Promise<void> {
+    try {
+      // Generate reset URL
+      const resetUrl = `${process.env.FRONTEND_URL}/auth/reset-password/${resetToken}`;
+      
+      // Load and render email template
+      const htmlContent = await this.renderTemplate('password-reset', {
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        resetUrl: resetUrl,
+        expiresIn: '1 hour',
+        supportEmail: process.env.SUPPORT_EMAIL || 'support@hotel.com',
+        hotelName: process.env.HOTEL_NAME || 'AirVik Hotel',
+        currentYear: new Date().getFullYear().toString()
+      });
+      
+      // Generate plain text version
+      const textContent = await this.renderTemplate('password-reset', {
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        resetUrl: resetUrl,
+        expiresIn: '1 hour',
+        supportEmail: process.env.SUPPORT_EMAIL || 'support@hotel.com',
+        hotelName: process.env.HOTEL_NAME || 'AirVik Hotel'
+      }, 'txt');
+      
+      // Send email
+      const mailOptions = {
+        from: {
+          name: process.env.HOTEL_NAME || 'AirVik Hotel',
+          address: this.config.from
+        },
+        to: user.email,
+        subject: 'Password Reset Request',
+        html: htmlContent,
+        text: textContent
+      };
+      
+      this.ensureTransporterInitialized();
+      const info = await this.transporter!.sendMail(mailOptions);
+      
+      // Log email sent
+      console.log(`Password reset email sent to ${user.email}:`, info.messageId);
+      
+    } catch (error) {
+      console.error('Failed to send password reset email:', error);
+      throw new Error('Failed to send password reset email');
+    }
+  }
+
+  /**
+   * Send confirmation email after successful password reset
+   */
+  async sendPasswordResetConfirmationEmail(user: IUser): Promise<void> {
+    try {
+      // Load and render email template
+      const htmlContent = await this.renderTemplate('password-reset-confirmation', {
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        loginUrl: `${process.env.FRONTEND_URL}/auth/login`,
+        supportEmail: process.env.SUPPORT_EMAIL || 'support@hotel.com',
+        hotelName: process.env.HOTEL_NAME || 'AirVik Hotel',
+        currentYear: new Date().getFullYear().toString()
+      });
+      
+      // Generate plain text version
+      const textContent = await this.renderTemplate('password-reset-confirmation', {
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        loginUrl: `${process.env.FRONTEND_URL}/auth/login`,
+        supportEmail: process.env.SUPPORT_EMAIL || 'support@hotel.com',
+        hotelName: process.env.HOTEL_NAME || 'AirVik Hotel'
+      }, 'txt');
+      
+      // Send email
+      const mailOptions = {
+        from: {
+          name: process.env.HOTEL_NAME || 'AirVik Hotel',
+          address: this.config.from
+        },
+        to: user.email,
+        subject: 'Your Password Has Been Reset',
+        html: htmlContent,
+        text: textContent
+      };
+      
+      this.ensureTransporterInitialized();
+      const info = await this.transporter!.sendMail(mailOptions);
+      
+      // Log email sent
+      console.log(`Password reset confirmation email sent to ${user.email}:`, info.messageId);
+      
+    } catch (error) {
+      console.error('Failed to send password reset confirmation email:', error);
+      throw new Error('Failed to send password reset confirmation email');
+    }
+  }
+
   /**
    * Send confirmation email after successful verification
    */
@@ -167,7 +287,8 @@ export class EmailService {
         text: textContent
       };
       
-      const info = await this.transporter.sendMail(mailOptions);
+      this.ensureTransporterInitialized();
+      const info = await this.transporter!.sendMail(mailOptions);
       
       // TODO: Log email sent
       console.log(`Success email sent to ${user.email}:`, info.messageId);
@@ -212,6 +333,129 @@ export class EmailService {
    * Get fallback template when file template is not available
    */
   private getFallbackTemplate(templateName: string, data: TemplateData, extension: string): string {
+    if (templateName === 'password-reset') {
+      if (extension === 'html') {
+        return `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8">
+            <title>Password Reset Request</title>
+            <style>
+              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+              .header { background: #f8c301; color: white; padding: 20px; text-align: center; }
+              .content { padding: 20px; background: #f9f9f9; }
+              .button { display: inline-block; background: #007bff; color: white; 
+                       padding: 12px 24px; text-decoration: none; border-radius: 4px; }
+              .footer { padding: 20px; text-align: center; color: #666; font-size: 12px; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h1>Password Reset Request</h1>
+              </div>
+              <div class="content">
+                <h2>Hello, ${data.firstName}!</h2>
+                <p>We received a request to reset your password for your account at ${data.hotelName}.</p>
+                <p>To reset your password, please click the button below:</p>
+                <p style="text-align: center;">
+                  <a href="${data.resetUrl}" class="button">Reset Password</a>
+                </p>
+                <p>This link will expire in ${data.expiresIn}.</p>
+                <p>If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.</p>
+              </div>
+              <div class="footer">
+                <p>Need help? Contact us at ${data.supportEmail}</p>
+                <p>&copy; ${data.currentYear} ${data.hotelName}. All rights reserved.</p>
+              </div>
+            </div>
+          </body>
+          </html>
+        `;
+      } else {
+        return `
+Password Reset Request
+
+Hello, ${data.firstName}!
+
+We received a request to reset your password for your account at ${data.hotelName}.
+
+To reset your password, please visit the following link:
+${data.resetUrl}
+
+This link will expire in ${data.expiresIn}.
+
+If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.
+
+Need help? Contact us at ${data.supportEmail}
+
+© ${data.currentYear} ${data.hotelName}. All rights reserved.
+        `;
+      }
+    }
+    
+    if (templateName === 'password-reset-confirmation') {
+      if (extension === 'html') {
+        return `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8">
+            <title>Password Reset Successful</title>
+            <style>
+              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+              .header { background: #28a745; color: white; padding: 20px; text-align: center; }
+              .content { padding: 20px; background: #f9f9f9; }
+              .button { display: inline-block; background: #007bff; color: white; 
+                       padding: 12px 24px; text-decoration: none; border-radius: 4px; }
+              .footer { padding: 20px; text-align: center; color: #666; font-size: 12px; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h1>✓ Password Reset Successful</h1>
+              </div>
+              <div class="content">
+                <h2>Hello, ${data.firstName}!</h2>
+                <p>Your password has been successfully reset.</p>
+                <p>You can now log in with your new password:</p>
+                <p style="text-align: center;">
+                  <a href="${data.loginUrl}" class="button">Log In</a>
+                </p>
+                <p>If you did not request this password change, please contact our support team immediately.</p>
+              </div>
+              <div class="footer">
+                <p>Need help? Contact us at ${data.supportEmail}</p>
+                <p>&copy; ${data.currentYear} ${data.hotelName}. All rights reserved.</p>
+              </div>
+            </div>
+          </body>
+          </html>
+        `;
+      } else {
+        return `
+Password Reset Successful
+
+Hello, ${data.firstName}!
+
+Your password has been successfully reset.
+
+You can now log in with your new password:
+${data.loginUrl}
+
+If you did not request this password change, please contact our support team immediately.
+
+Need help? Contact us at ${data.supportEmail}
+
+© ${data.currentYear} ${data.hotelName}. All rights reserved.
+        `;
+      }
+    }
+    
     if (templateName === 'welcome-verification') {
       if (extension === 'html') {
         return `
@@ -344,7 +588,12 @@ Need help? Contact us at ${data.supportEmail}
    */
   async testConnection(): Promise<boolean> {
     try {
-      // TODO: Verify email service is working
+      // Verify email service is working
+      this.ensureTransporterInitialized();
+      if (!this.transporter) {
+        console.error('Email transporter not initialized');
+        return false;
+      }
       await this.transporter.verify();
       return true;
     } catch (error) {

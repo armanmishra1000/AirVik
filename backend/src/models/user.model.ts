@@ -24,6 +24,8 @@ export interface IUser extends Document {
   loginAttempts: number;
   lockoutUntil?: Date;
   profileImage?: string;
+  resetPasswordToken?: string;
+  resetPasswordTokenExpires?: Date;
   preferences: {
     newsletter: boolean;
     notifications: boolean;
@@ -147,6 +149,13 @@ const UserSchema = new Schema<IUser>(
     },
     profileImage: {
       type: String,
+    },
+    resetPasswordToken: {
+      type: String,
+      index: true,
+    },
+    resetPasswordTokenExpires: {
+      type: Date,
     },
     preferences: {
       newsletter: { type: Boolean, default: false },
