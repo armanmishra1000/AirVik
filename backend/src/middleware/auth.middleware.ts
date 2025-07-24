@@ -9,12 +9,19 @@ import { RefreshToken } from '../models/refresh-token.model';
  * JWT Configuration
  * Matches the configuration in auth.service.ts
  */
-const JWT_CONFIG = {
+interface JwtConfig {
+  ACCESS_TOKEN_EXPIRY: string;
+  REFRESH_TOKEN_EXPIRY: string;
+  SECRET: string;
+  REFRESH_SECRET: string;
+}
+
+const JWT_CONFIG: JwtConfig = {
   ACCESS_TOKEN_EXPIRY: '15m',
   REFRESH_TOKEN_EXPIRY: '7d',
   SECRET: process.env.JWT_SECRET || 'your-super-secret-jwt-key',
   REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || 'your-super-secret-refresh-key'
-};
+} as const;
 
 /**
  * Rate Limiting Configuration
@@ -76,7 +83,7 @@ export const authenticateToken = async (
   req: Request,
   res: Response,
   next: NextFunction
-): Promise<void> => {
+): Promise<Response | void> => {
   try {
     // Extract token from Authorization header
     const authHeader = req.headers.authorization;
@@ -89,11 +96,12 @@ export const authenticateToken = async (
     const accessToken = token || cookieToken;
 
     if (!accessToken) {
-      return res.status(401).json({
+      res.status(401).json({
         success: false,
         error: 'Access token required',
         code: 'AUTHENTICATION_REQUIRED'
       });
+      return;
     }
 
     // Verify JWT token with secret
@@ -137,15 +145,16 @@ export const authenticateToken = async (
       return res.status(401).json({
         success: false,
         error: 'Invalid access token',
-        code: 'TOKEN_INVALID'
-      });
-    } else {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication failed',
-        code: 'AUTHENTICATION_FAILED'
+        code: 'INVALID_TOKEN'
       });
     }
+    
+    // For all other errors, return a generic error
+    return res.status(500).json({
+      success: false,
+      error: 'Authentication failed',
+      code: 'AUTHENTICATION_ERROR'
+    });
   }
 };
 
@@ -164,7 +173,7 @@ export const refreshAccessToken = async (
   req: Request,
   res: Response,
   next: NextFunction
-): Promise<void> => {
+): Promise<Response | void> => {
   try {
     // Extract refresh token from cookies or request body
     const refreshToken = req.cookies?.refreshToken || req.body.refreshToken;
@@ -226,33 +235,36 @@ export const requireRole = (minRole: UserRole | string) => {
   return (req: Request, res: Response, next: NextFunction): void => {
     try {
       if (!req.user) {
-        return res.status(401).json({
+        res.status(401).json({
           success: false,
           error: 'Authentication required',
           code: 'AUTHENTICATION_REQUIRED'
         });
+        return;
       }
 
       const userRoleLevel = roleHierarchy[req.user.role.toLowerCase()] ?? 0;
       const requiredRoleLevel = roleHierarchy[minRole.toLowerCase()] ?? 0;
 
       if (userRoleLevel < requiredRoleLevel) {
-        return res.status(403).json({
+        res.status(403).json({
           success: false,
           error: 'Insufficient permissions',
           code: 'INSUFFICIENT_PERMISSIONS'
         });
+        return;
       }
 
       next();
     } catch (error) {
       console.error('Authorization error:', error);
       
-      return res.status(500).json({
+      res.status(500).json({
         success: false,
         error: 'Authorization check failed',
         code: 'AUTHORIZATION_ERROR'
       });
+      return;
     }
   };
 };
@@ -270,26 +282,28 @@ export const requirePermission = (permission: string) => {
   return (req: Request, res: Response, next: NextFunction): void => {
     try {
       if (!req.user) {
-        return res.status(401).json({
+        res.status(401).json({
           success: false,
           error: 'Authentication required',
           code: 'AUTHENTICATION_REQUIRED'
         });
+        return;
       }
 
       if (!req.user.permissions?.includes(permission)) {
-        return res.status(403).json({
+        res.status(403).json({
           success: false,
           error: `Permission '${permission}' required`,
           code: 'PERMISSION_DENIED'
         });
+        return;
       }
 
       next();
     } catch (error) {
       console.error('Permission check error:', error);
       
-      return res.status(500).json({
+      res.status(500).json({
         success: false,
         error: 'Permission check failed',
         code: 'PERMISSION_CHECK_ERROR'
@@ -313,19 +327,21 @@ export const requireEmailVerification = (
   next: NextFunction
 ): void => {
   if (!req.user) {
-    return res.status(401).json({
+    res.status(401).json({
       success: false,
       error: 'Authentication required',
       code: 'AUTHENTICATION_REQUIRED'
     });
+    return;
   }
 
   if (!req.user.isEmailVerified) {
-    return res.status(403).json({
+    res.status(403).json({
       success: false,
       error: 'Email verification required',
       code: 'EMAIL_NOT_VERIFIED'
     });
+    return;
   }
 
   next();
