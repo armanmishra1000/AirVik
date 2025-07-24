@@ -429,8 +429,8 @@ Copy this prompt:
 Add authentication routes to Next.js application.
 
 Create/update files:
-1. frontend/src/app/login/page.tsx - Login page
-2. frontend/src/app/dashboard/page.tsx - Example protected page
+1. frontend/app/login/page.tsx - Login page
+2. frontend/app/dashboard/page.tsx - Example protected page
 3. Update app layout for navigation
 
 Login page should:

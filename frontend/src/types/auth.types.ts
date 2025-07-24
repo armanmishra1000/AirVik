@@ -11,12 +11,35 @@ export interface User {
   email: string;
   firstName: string;
   lastName: string;
-  phoneNumber?: string;
+  username?: string;
+  phone?: string;
+  phoneNumber?: string; // Legacy field for backward compatibility
+  role: string;
+  emailVerified: boolean;
+  isActive: boolean;
   status: UserStatus;
   createdAt: string;
   updatedAt: string;
   lastLoginAt?: string;
   fullName?: string; // Virtual field from backend
+}
+
+// Login request interface
+export interface LoginRequest {
+  email: string;
+  password: string;
+  rememberMe?: boolean;
+}
+
+// Login response interface
+export interface LoginResponse {
+  success: true;
+  data: {
+    user: User;
+    accessToken: string;
+    expiresIn: number;
+  };
+  message: string;
 }
 
 // Registration request interface
@@ -147,6 +170,7 @@ export interface AuthContextType {
   updateProfile: (userData: UpdateProfileRequest) => Promise<void>;
   clearError: () => void;
   hasPermission: (permission: string) => boolean;
+  checkAuthStatus: () => Promise<boolean>;
 }
 
 // Rate limiting interface

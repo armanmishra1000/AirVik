@@ -30,7 +30,7 @@ export default function Home() {
                 Get Started
               </a>
               <a
-                href="/auth/login"
+                href="/login"
                 className="bg-gray-100 text-gray-700 px-6 py-3 rounded-md hover:bg-gray-200 transition-colors duration-200 font-medium"
               >
                 Sign In

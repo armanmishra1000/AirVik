@@ -1,7 +1,10 @@
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
 import mongoose, { Types } from 'mongoose';
-import { User, IUser, UserStatus } from '../models/user.model';
+import { User, IUser, UserStatus, UserRole } from '../models/user.model';
+import { UserSession, IUserSession } from '../models/user-session.model';
+import { BlacklistedToken } from '../models/blacklisted-token.model';
 import { EmailService } from './email.service';
 
 // Custom error classes for better error handling
@@ -49,6 +52,37 @@ export interface VerificationResponse {
   status: UserStatus;
 }
 
+// Interface for login response
+export interface LoginResponse {
+  user: {
+    id: string;
+    email: string;
+    username: string;
+    firstName: string;
+    lastName: string;
+    role: UserRole;
+    emailVerified: boolean;
+  };
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+}
+
+// Interface for token refresh response
+export interface RefreshTokenResponse {
+  accessToken: string;
+  expiresIn: number;
+}
+
+// Interface for token payload
+export interface TokenPayload {
+  userId: string;
+  email: string;
+  role: UserRole;
+  iat: number;
+  exp: number;
+}
+
 // Rate limiting configuration
 const RATE_LIMIT_CONFIG = {
   // Increased for development and testing
@@ -59,9 +93,19 @@ const RATE_LIMIT_CONFIG = {
 
 export class AuthService {
   private emailService: EmailService;
+  private readonly JWT_SECRET: string;
+  private readonly JWT_REFRESH_SECRET: string;
+  private readonly ACCESS_TOKEN_EXPIRY = '15m'; // 15 minutes
+  private readonly REFRESH_TOKEN_EXPIRY = '7d'; // 7 days
+  private readonly REFRESH_TOKEN_EXPIRY_REMEMBER = '30d'; // 30 days for remember me
+  private readonly BCRYPT_ROUNDS = 12;
+  private readonly MAX_FAILED_ATTEMPTS = 5;
+  private readonly LOCKOUT_TIME_MINUTES = 15;
   
   constructor() {
     this.emailService = new EmailService();
+    this.JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+    this.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-key';
   }
   
   /**
@@ -236,14 +280,7 @@ export class AuthService {
     return crypto.randomBytes(32).toString('hex');
   }
   
-  /**
-   * Hash password using bcrypt
-   */
-  async hashPassword(password: string): Promise<string> {
-    // TODO: Implement password hashing with salt
-    const saltRounds = 12;
-    return bcrypt.hash(password, saltRounds);
-  }
+
   
   /**
    * Validate registration data
@@ -274,7 +311,7 @@ export class AuthService {
     }
     
     // TODO: Phone number validation (optional)
-    if (data.phoneNumber && !this.isValidPhoneNumber(data.phoneNumber)) {
+    if (data.phoneNumber && data.phoneNumber.trim() !== '' && !this.isValidPhoneNumber(data.phoneNumber)) {
       errors.push(new ValidationError('Please provide a valid phone number', 'phoneNumber'));
     }
     
@@ -346,6 +383,296 @@ export class AuthService {
     // Allow international format: +1234567890 or domestic: 1234567890 or 01234567890
     // Must be 7-15 digits (excluding country code +)
     return /^[\+]?[0-9]{7,15}$/.test(cleanPhone);
+  }
+
+  // ============================================================================
+  // AUTHENTICATION METHODS
+  // ============================================================================
+
+  /**
+   * Login user with email/password validation and session management
+   * Based on VikBooking's application.php login function
+   */
+  async loginUser(email: string, password: string, rememberMe: boolean = false, ipAddress?: string, deviceInfo?: string): Promise<LoginResponse> {
+    try {
+      // Find user by email
+      const user = await User.findOne({ email: email.toLowerCase() });
+      
+      if (!user) {
+        throw new AuthError('Invalid email or password', 401);
+      }
+
+      // Check if account is locked
+      if (user.isAccountLocked()) {
+        throw new AuthError('Account is temporarily locked due to too many failed login attempts', 423);
+      }
+
+      // Check if user is active
+      if (!user.isActive) {
+        throw new AuthError('Account is deactivated', 403);
+      }
+
+      // Verify password
+      const isPasswordValid = await user.comparePassword(password);
+      
+      if (!isPasswordValid) {
+        // Increment failed login attempts
+        await user.incrementFailedLoginAttempts();
+        throw new AuthError('Invalid email or password', 401);
+      }
+
+      // Reset failed login attempts on successful login
+      await user.resetFailedLoginAttempts();
+
+      // Update last login time
+      user.lastLoginAt = new Date();
+      await user.save();
+
+      // Generate tokens
+      const accessToken = this.generateAccessToken(user);
+      const refreshToken = this.generateRefreshToken();
+      
+      // Create user session
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + (rememberMe ? 30 : 7));
+      
+      const hashedRefreshToken = await bcrypt.hash(refreshToken, this.BCRYPT_ROUNDS);
+      
+      await UserSession.create({
+        userId: user._id,
+        refreshToken: hashedRefreshToken,
+        deviceInfo: deviceInfo || 'Unknown',
+        ipAddress: ipAddress || '0.0.0.0',
+        isActive: true,
+        expiresAt
+      });
+
+      return {
+        user: {
+          id: (user._id as mongoose.Types.ObjectId).toString(),
+          email: user.email,
+          username: user.username,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          role: user.role,
+          emailVerified: user.emailVerified
+        },
+        accessToken,
+        refreshToken,
+        expiresIn: 15 * 60 // 15 minutes in seconds
+      };
+
+    } catch (error) {
+      if (error instanceof AuthError) {
+        throw error;
+      }
+      throw new AuthError('Login failed. Please try again.', 500);
+    }
+  }
+
+  /**
+   * Logout user and blacklist tokens
+   */
+  async logoutUser(userId: string, refreshToken: string): Promise<void> {
+    try {
+      // Find and deactivate user session
+      const sessions = await UserSession.find({ userId, isActive: true });
+      
+      for (const session of sessions) {
+        const isValidRefreshToken = await bcrypt.compare(refreshToken, session.refreshToken);
+        if (isValidRefreshToken) {
+          session.isActive = false;
+          await session.save();
+          break;
+        }
+      }
+
+      // Note: Access token blacklisting would be handled by the verifyToken method
+      // when checking if a token is blacklisted
+      
+    } catch (error) {
+      throw new AuthError('Logout failed. Please try again.', 500);
+    }
+  }
+
+  /**
+   * Refresh access token using refresh token
+   */
+  async refreshToken(refreshToken: string): Promise<RefreshTokenResponse> {
+    try {
+      // Find active session with matching refresh token
+      const sessions = await UserSession.find({ isActive: true }).populate('userId');
+      
+      let validSession: IUserSession | null = null;
+      
+      for (const session of sessions) {
+        const isValidRefreshToken = await bcrypt.compare(refreshToken, session.refreshToken);
+        if (isValidRefreshToken && session.expiresAt > new Date()) {
+          validSession = session;
+          break;
+        }
+      }
+
+      if (!validSession) {
+        throw new AuthError('Invalid or expired refresh token', 401);
+      }
+
+      const user = validSession.userId as IUser;
+      
+      // Check if user is still active
+      if (!user.isActive) {
+        throw new AuthError('Account is deactivated', 403);
+      }
+
+      // Generate new access token
+      const accessToken = this.generateAccessToken(user);
+
+      return {
+        accessToken,
+        expiresIn: 15 * 60 // 15 minutes in seconds
+      };
+
+    } catch (error) {
+      if (error instanceof AuthError) {
+        throw error;
+      }
+      throw new AuthError('Token refresh failed. Please try again.', 500);
+    }
+  }
+
+  /**
+   * Verify access token and check blacklist
+   */
+  async verifyToken(accessToken: string): Promise<TokenPayload> {
+    try {
+      // Check if token is blacklisted
+      const isBlacklisted = await BlacklistedToken.isTokenBlacklisted(accessToken);
+      if (isBlacklisted) {
+        throw new AuthError('Token has been revoked', 401);
+      }
+
+      // Verify JWT token
+      const payload = jwt.verify(accessToken, this.JWT_SECRET) as TokenPayload;
+      
+      // Verify user still exists and is active
+      const user = await User.findById(payload.userId);
+      if (!user || !user.isActive) {
+        throw new AuthError('Invalid token', 401);
+      }
+
+      return payload;
+
+    } catch (error) {
+      if (error instanceof jwt.JsonWebTokenError) {
+        throw new AuthError('Invalid token', 401);
+      }
+      if (error instanceof AuthError) {
+        throw error;
+      }
+      throw new AuthError('Token verification failed', 500);
+    }
+  }
+
+  /**
+   * Hash password with bcrypt (12+ rounds)
+   */
+  async hashPassword(password: string): Promise<string> {
+    return bcrypt.hash(password, this.BCRYPT_ROUNDS);
+  }
+
+  /**
+   * Compare password with hashed password
+   */
+  async comparePassword(password: string, hashedPassword: string): Promise<boolean> {
+    return bcrypt.compare(password, hashedPassword);
+  }
+
+  /**
+   * Lock user account (progressive locking implementation)
+   */
+  async lockAccount(userId: string): Promise<void> {
+    try {
+      const user = await User.findById(userId);
+      if (!user) {
+        throw new AuthError('User not found', 404);
+      }
+
+      // Progressive locking: 1min, 5min, 15min, 1hour
+      const lockDurations = [1, 5, 15, 60]; // minutes
+      const attemptIndex = Math.min(user.failedLoginAttempts - 1, lockDurations.length - 1);
+      const lockDuration = lockDurations[attemptIndex];
+      
+      user.accountLockedUntil = new Date(Date.now() + lockDuration * 60 * 1000);
+      await user.save();
+
+    } catch (error) {
+      if (error instanceof AuthError) {
+        throw error;
+      }
+      throw new AuthError('Account locking failed', 500);
+    }
+  }
+
+  /**
+   * Reset failed login attempts (on successful login)
+   */
+  async resetFailedAttempts(userId: string): Promise<void> {
+    try {
+      const user = await User.findById(userId);
+      if (!user) {
+        throw new AuthError('User not found', 404);
+      }
+
+      await user.resetFailedLoginAttempts();
+
+    } catch (error) {
+      if (error instanceof AuthError) {
+        throw error;
+      }
+      throw new AuthError('Reset failed attempts failed', 500);
+    }
+  }
+
+  /**
+   * Blacklist access token on logout
+   */
+  async blacklistToken(accessToken: string): Promise<void> {
+    try {
+      const payload = jwt.decode(accessToken) as TokenPayload;
+      if (payload && payload.exp) {
+        const expiresAt = new Date(payload.exp * 1000);
+        await BlacklistedToken.blacklistToken(accessToken, expiresAt);
+      }
+    } catch (error) {
+      // Silently fail - token blacklisting is not critical
+      console.error('Token blacklisting failed:', error);
+    }
+  }
+
+  // ============================================================================
+  // PRIVATE HELPER METHODS
+  // ============================================================================
+
+  /**
+   * Generate JWT access token
+   */
+  private generateAccessToken(user: IUser): string {
+    const payload: Omit<TokenPayload, 'iat' | 'exp'> = {
+      userId: (user._id as mongoose.Types.ObjectId).toString(),
+      email: user.email,
+      role: user.role
+    };
+
+    return jwt.sign(payload, this.JWT_SECRET, {
+      expiresIn: this.ACCESS_TOKEN_EXPIRY
+    });
+  }
+
+  /**
+   * Generate random refresh token
+   */
+  private generateRefreshToken(): string {
+    return crypto.randomBytes(64).toString('hex');
   }
 }
 

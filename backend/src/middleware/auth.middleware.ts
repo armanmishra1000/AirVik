@@ -79,26 +79,91 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
   }
 };
 
+// In-memory store for email-based rate limiting
+const emailAttempts = new Map<string, { count: number; resetTime: number }>();
+
 /**
  * Rate limiting middleware for login attempts
- * Limits requests per IP and per email
+ * Limits requests per IP (10 per 15min) and per email (5 per 15min)
  */
-export const rateLimitLogin = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // Limit each IP to 10 requests per windowMs for login
-  message: {
-    success: false,
-    error: 'Too many login attempts, please try again later',
-    code: 'RATE_LIMIT_EXCEEDED'
-  },
-  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-  // TODO: Implement per-email rate limiting (5 attempts per email per 15 min)
-  keyGenerator: (req: Request): string => {
-    // Rate limit by IP address
-    return req.ip || req.connection.remoteAddress || 'unknown';
+export const rateLimitLogin = [
+  // IP-based rate limiting
+  rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 10, // Limit each IP to 10 requests per 15 minutes
+    message: {
+      success: false,
+      error: 'Too many login attempts from this IP, please try again later',
+      code: 'IP_RATE_LIMIT_EXCEEDED'
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: Request): string => {
+      return req.ip || req.connection.remoteAddress || 'unknown';
+    },
+    handler: (req: Request, res: Response) => {
+      const retryAfter = Math.ceil(15 * 60); // 15 minutes in seconds
+      res.set('Retry-After', retryAfter.toString());
+      res.status(429).json({
+        success: false,
+        error: 'Too many login attempts from this IP, please try again later',
+        code: 'IP_RATE_LIMIT_EXCEEDED',
+        retryAfter
+      });
+    }
+  }),
+  
+  // Email-based rate limiting middleware
+  (req: Request, res: Response, next: NextFunction): void => {
+    const email = req.body.email?.toLowerCase();
+    if (!email) {
+      next();
+      return;
+    }
+
+    const now = Date.now();
+    const windowMs = 15 * 60 * 1000; // 15 minutes
+    const maxAttempts = 5;
+
+    // Clean up expired entries
+    for (const [key, value] of emailAttempts.entries()) {
+      if (now > value.resetTime) {
+        emailAttempts.delete(key);
+      }
+    }
+
+    const attempt = emailAttempts.get(email);
+    
+    if (attempt) {
+      if (now < attempt.resetTime) {
+        if (attempt.count >= maxAttempts) {
+          const retryAfter = Math.ceil((attempt.resetTime - now) / 1000);
+          res.set('Retry-After', retryAfter.toString());
+          res.status(429).json({
+            success: false,
+            error: 'Too many login attempts for this email, please try again later',
+            code: 'EMAIL_RATE_LIMIT_EXCEEDED',
+            retryAfter
+          });
+          return;
+        }
+        attempt.count++;
+      } else {
+        // Reset window
+        attempt.count = 1;
+        attempt.resetTime = now + windowMs;
+      }
+    } else {
+      // First attempt for this email
+      emailAttempts.set(email, {
+        count: 1,
+        resetTime: now + windowMs
+      });
+    }
+
+    next();
   }
-});
+];
 
 /**
  * Validation middleware for login request
@@ -128,7 +193,7 @@ export const validateLoginRequest = [
         error: 'Validation failed',
         code: 'VALIDATION_ERROR',
         details: errors.array().map(error => ({
-          field: error.param,
+          field: error.type === 'field' ? error.path : 'unknown',
           message: error.msg
         }))
       });
@@ -140,11 +205,46 @@ export const validateLoginRequest = [
 
 /**
  * CSRF protection middleware
- * TODO: Implement CSRF token validation for state-changing operations
+ * Validates CSRF tokens for state-changing operations
  */
 export const csrfProtection = (req: Request, res: Response, next: NextFunction): void => {
-  // TODO: Implement CSRF token validation
-  // For now, just pass through - implement when frontend sends CSRF tokens
+  // Skip CSRF validation for GET requests
+  if (req.method === 'GET') {
+    next();
+    return;
+  }
+
+  // For now, we rely on SameSite cookies for CSRF protection
+  // This provides good protection against CSRF attacks
+  // TODO: Implement explicit CSRF token validation when needed
+  
+  // Check if request has proper origin/referer headers
+  const origin = req.get('Origin');
+  const referer = req.get('Referer');
+  const host = req.get('Host');
+  
+  if (origin) {
+    const originHost = new URL(origin).host;
+    if (originHost !== host) {
+      res.status(403).json({
+        success: false,
+        error: 'Invalid origin',
+        code: 'CSRF_INVALID_ORIGIN'
+      });
+      return;
+    }
+  } else if (referer) {
+    const refererHost = new URL(referer).host;
+    if (refererHost !== host) {
+      res.status(403).json({
+        success: false,
+        error: 'Invalid referer',
+        code: 'CSRF_INVALID_REFERER'
+      });
+      return;
+    }
+  }
+  
   next();
 };
 

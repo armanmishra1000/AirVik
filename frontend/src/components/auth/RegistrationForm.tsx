@@ -83,7 +83,12 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
 
     try {
       // TODO: Call registration API
-      const result = await authService.registerUser(formState.data);
+      // Clean up the data before sending - remove empty phone number
+      const registrationData = {
+        ...formState.data,
+        phoneNumber: formState.data.phoneNumber?.trim() || undefined
+      };
+      const result = await authService.registerUser(registrationData);
       
       // TODO: Handle successful registration
       setFormState(prev => ({ 
@@ -94,12 +99,12 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
 
       // TODO: Redirect to success page
       setTimeout(() => {
-        router.push('/register/success');
+        router.push(`/register/success?email=${encodeURIComponent(registrationData.email)}`);
       }, 2000);
 
       // Call success callback if provided
-      if (onSuccess && result.data) {
-        onSuccess(result.data);
+      if (onSuccess && result.data && result.data.user) {
+        onSuccess(result.data.user);
       }
 
     } catch (error) {

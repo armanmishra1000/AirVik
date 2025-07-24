@@ -8,6 +8,13 @@ export interface IBlacklistedToken extends Document {
   updatedAt: Date;
 }
 
+// Static methods interface
+export interface IBlacklistedTokenModel extends mongoose.Model<IBlacklistedToken> {
+  blacklistToken(token: string, expiresAt: Date): Promise<IBlacklistedToken>;
+  isTokenBlacklisted(token: string): Promise<boolean>;
+  cleanupExpired(): Promise<any>;
+}
+
 // Blacklisted token schema definition
 const BlacklistedTokenSchema = new Schema<IBlacklistedToken>({
   token: {
@@ -33,35 +40,32 @@ const BlacklistedTokenSchema = new Schema<IBlacklistedToken>({
 BlacklistedTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 // Static methods
-BlacklistedTokenSchema.statics = {
-  // TODO: Method to blacklist a token
-  async blacklistToken(token: string, expiresAt: Date) {
-    // Hash the token before storing for security
-    const hashedToken = require('crypto').createHash('sha256').update(token).digest('hex');
-    
-    return this.create({
-      token: hashedToken,
-      expiresAt
-    });
-  },
+BlacklistedTokenSchema.statics.blacklistToken = async function(token: string, expiresAt: Date): Promise<IBlacklistedToken> {
+  // Hash the token before storing for security
+  const crypto = require('crypto');
+  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
   
-  // TODO: Method to check if a token is blacklisted
-  async isTokenBlacklisted(token: string): Promise<boolean> {
-    const hashedToken = require('crypto').createHash('sha256').update(token).digest('hex');
-    
-    const blacklistedToken = await this.findOne({ 
-      token: hashedToken,
-      expiresAt: { $gt: new Date() } // Only check non-expired blacklist entries
-    });
-    
-    return !!blacklistedToken;
-  },
-  
-  // TODO: Method to cleanup expired blacklist entries (manual cleanup)
-  async cleanupExpired() {
-    return this.deleteMany({ expiresAt: { $lt: new Date() } });
-  }
+  return this.create({
+    token: hashedToken,
+    expiresAt
+  });
 };
 
-export const BlacklistedToken = mongoose.model<IBlacklistedToken>('BlacklistedToken', BlacklistedTokenSchema);
+BlacklistedTokenSchema.statics.isTokenBlacklisted = async function(token: string): Promise<boolean> {
+  const crypto = require('crypto');
+  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+  
+  const blacklistedToken = await this.findOne({ 
+    token: hashedToken,
+    expiresAt: { $gt: new Date() } // Only check non-expired blacklist entries
+  });
+  
+  return !!blacklistedToken;
+};
+
+BlacklistedTokenSchema.statics.cleanupExpired = async function() {
+  return this.deleteMany({ expiresAt: { $lt: new Date() } });
+};
+
+export const BlacklistedToken = mongoose.model<IBlacklistedToken, IBlacklistedTokenModel>('BlacklistedToken', BlacklistedTokenSchema);
 export default BlacklistedToken;

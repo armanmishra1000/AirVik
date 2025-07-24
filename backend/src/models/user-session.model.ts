@@ -42,9 +42,13 @@ const UserSessionSchema = new Schema<IUserSession>({
     required: [true, 'IP address is required'],
     validate: {
       validator: function(ip: string) {
-        // TODO: Implement IP address format validation (IPv4 and IPv6)
-        return /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(ip) || 
-               /^([0-9a-f]{1,4}:){7}[0-9a-f]{1,4}$/i.test(ip);
+        // IPv4 validation
+        const ipv4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+        
+        // IPv6 validation (including compressed forms like ::1)
+        const ipv6Regex = /^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$|^::1$|^::$|^(?:[0-9a-fA-F]{1,4}:)*::(?:[0-9a-fA-F]{1,4}:)*[0-9a-fA-F]{1,4}$|^(?:[0-9a-fA-F]{1,4}:)*::[0-9a-fA-F]{1,4}$|^(?:[0-9a-fA-F]{1,4}:)+::$/;
+        
+        return ipv4Regex.test(ip) || ipv6Regex.test(ip);
       },
       message: 'Please provide a valid IP address'
     }

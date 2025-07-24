@@ -62,7 +62,7 @@ const UserProfile: React.FC<UserProfileProps> = ({
         // Token expired or invalid - redirect to login
         setError('Your session has expired. Please log in again.');
         setTimeout(() => {
-          router.push('/auth/login');
+          router.push('/login');
         }, 2000);
       } else if (authError.statusCode === 403) {
         setError('Access denied. Please check your permissions.');
@@ -119,7 +119,7 @@ const UserProfile: React.FC<UserProfileProps> = ({
       if (authError.statusCode === 401) {
         setError('Your session has expired. Please log in again.');
         setTimeout(() => {
-          router.push('/auth/login');
+          router.push('/login');
         }, 2000);
       } else if (authError.statusCode === 429) {
         // Rate limited - redirect to resend page which handles this better
@@ -235,7 +235,7 @@ const UserProfile: React.FC<UserProfileProps> = ({
             </button>
             {error.includes('session has expired') && (
               <button
-                onClick={() => router.push('/auth/login')}
+                onClick={() => router.push('/login')}
                 className="ml-2 bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors duration-200"
               >
                 Go to Login

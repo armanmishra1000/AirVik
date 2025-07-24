@@ -111,7 +111,7 @@ const EditProfile: React.FC<EditProfileProps> = ({
         // Token expired or invalid - redirect to login
         setErrorMessage('Your session has expired. Please log in again.');
         setTimeout(() => {
-          router.push('/auth/login');
+          router.push('/login');
         }, 2000);
       } else if (authError.statusCode === 403) {
         setErrorMessage('Access denied. Please check your permissions.');
@@ -237,7 +237,7 @@ const EditProfile: React.FC<EditProfileProps> = ({
         // Token expired or invalid - redirect to login
         setErrorMessage('Your session has expired. Please log in again.');
         setTimeout(() => {
-          router.push('/auth/login');
+          router.push('/login');
         }, 2000);
       } else if (authError.statusCode === 400) {
         // Validation errors from backend

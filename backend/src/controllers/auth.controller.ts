@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { validationResult, ValidationError as ExpressValidationError } from 'express-validator';
-import { AuthService, AuthError, ValidationError, RegisterUserData } from '../services/auth.service';
+import { AuthService, AuthError, ValidationError, RegisterUserData, LoginResponse } from '../services/auth.service';
+import { verifyAccessToken, blacklistToken, getTokenPayload } from '../utils/jwt.util';
 
 // Interface for standardized API responses
 interface ApiResponse<T = any> {
@@ -362,6 +363,292 @@ export class AuthController {
     
     res.status(statusCode).json(response);
   }
+
+  // ============================================================================
+  // AUTHENTICATION ENDPOINTS
+  // ============================================================================
+
+  /**
+   * User login
+   * POST /api/v1/auth/login
+   */
+  login = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      // Validate request data
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        const response: ApiResponse = {
+          success: false,
+          message: 'Validation failed',
+          errors: errors.array().map((error: any) => ({
+            field: error.param || 'unknown',
+            message: error.msg
+          })),
+          timestamp: new Date().toISOString()
+        };
+        res.status(400).json(response);
+        return;
+      }
+
+      const { email, password, rememberMe = false } = req.body;
+      const clientIP = req.ip || req.connection.remoteAddress || 'unknown';
+      const deviceInfo = req.get('User-Agent') || 'Unknown';
+
+      // Call auth service to login user
+      const loginResult: LoginResponse = await this.authService.loginUser(
+        email,
+        password,
+        rememberMe,
+        clientIP,
+        deviceInfo
+      );
+
+      // Set httpOnly cookies for tokens
+      const cookieOptions = {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict' as const,
+        path: '/'
+      };
+
+      // Set access token cookie (15 minutes)
+      res.cookie('access_token', loginResult.accessToken, {
+        ...cookieOptions,
+        maxAge: 15 * 60 * 1000 // 15 minutes
+      });
+
+      // Set refresh token cookie (7 or 30 days)
+      res.cookie('refresh_token', loginResult.refreshToken, {
+        ...cookieOptions,
+        maxAge: rememberMe ? 30 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000
+      });
+
+      // Log authentication event
+      console.log(`User login successful: ${loginResult.user.email} from ${clientIP}`);
+
+      const response: ApiResponse = {
+        success: true,
+        message: 'Login successful',
+        data: {
+          user: loginResult.user,
+          expiresIn: loginResult.expiresIn
+        },
+        timestamp: new Date().toISOString(),
+        requestId: req.headers['x-request-id'] as string
+      };
+
+      res.status(200).json(response);
+
+    } catch (error) {
+      // Log failed login attempt
+      const clientIP = req.ip || req.connection.remoteAddress || 'unknown';
+      console.error(`Login failed from ${clientIP}:`, error);
+      this.handleError(error, res, next);
+    }
+  };
+
+  /**
+   * User logout
+   * POST /api/v1/auth/logout
+   */
+  logout = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      // Safely access cookies with fallback
+      const accessToken = req.cookies?.access_token;
+      const refreshToken = req.cookies?.refresh_token;
+      const user = (req as any).user; // From auth middleware
+      
+      // Also check Authorization header as fallback
+      const authHeader = req.headers.authorization;
+      const tokenFromHeader = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
+
+      // Try to logout with available tokens
+      if (user) {
+        if (refreshToken) {
+          // Logout user and blacklist tokens
+          await this.authService.logoutUser(user.userId, refreshToken);
+        }
+        
+        // Blacklist access token (from cookie or header)
+        const tokenToBlacklist = accessToken || tokenFromHeader;
+        if (tokenToBlacklist) {
+          await blacklistToken(tokenToBlacklist);
+        }
+      }
+
+      // Clear cookies
+      res.clearCookie('access_token', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        path: '/'
+      });
+      
+      res.clearCookie('refresh_token', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        path: '/'
+      });
+
+      // Log logout event
+      const clientIP = req.ip || req.connection.remoteAddress || 'unknown';
+      console.log(`User logout: ${user?.email || 'unknown'} from ${clientIP}`);
+
+      const response: ApiResponse = {
+        success: true,
+        message: 'Logout successful',
+        timestamp: new Date().toISOString(),
+        requestId: req.headers['x-request-id'] as string
+      };
+
+      res.status(200).json(response);
+
+    } catch (error) {
+      this.handleError(error, res, next);
+    }
+  };
+
+  /**
+   * Refresh access token
+   * POST /api/v1/auth/refresh
+   */
+  refreshToken = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const refreshToken = req.cookies.refresh_token;
+
+      if (!refreshToken) {
+        const response: ApiResponse = {
+          success: false,
+          message: 'Refresh token not found',
+          timestamp: new Date().toISOString()
+        };
+        res.status(401).json(response);
+        return;
+      }
+
+      // Call auth service to refresh token
+      const refreshResult = await this.authService.refreshToken(refreshToken);
+
+      // Set new access token cookie
+      res.cookie('access_token', refreshResult.accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict' as const,
+        path: '/',
+        maxAge: 15 * 60 * 1000 // 15 minutes
+      });
+
+      const response: ApiResponse = {
+        success: true,
+        message: 'Token refreshed successfully',
+        data: {
+          expiresIn: refreshResult.expiresIn
+        },
+        timestamp: new Date().toISOString(),
+        requestId: req.headers['x-request-id'] as string
+      };
+
+      res.status(200).json(response);
+
+    } catch (error) {
+      this.handleError(error, res, next);
+    }
+  };
+
+  /**
+   * Get current user data
+   * GET /api/v1/auth/me
+   */
+  getCurrentUser = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const user = (req as any).user; // From auth middleware
+
+      if (!user) {
+        const response: ApiResponse = {
+          success: false,
+          message: 'User not found',
+          timestamp: new Date().toISOString()
+        };
+        res.status(404).json(response);
+        return;
+      }
+
+      const response: ApiResponse = {
+        success: true,
+        message: 'User data retrieved successfully',
+        data: {
+          user: {
+            id: user.userId,
+            email: user.email,
+            role: user.role
+          }
+        },
+        timestamp: new Date().toISOString(),
+        requestId: req.headers['x-request-id'] as string
+      };
+
+      res.status(200).json(response);
+
+    } catch (error) {
+      this.handleError(error, res, next);
+    }
+  };
+
+  /**
+   * Verify access token
+   * POST /api/v1/auth/verify-token
+   */
+  verifyToken = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { token } = req.body;
+      const accessToken = token || req.cookies.access_token;
+
+      if (!accessToken) {
+        const response: ApiResponse = {
+          success: false,
+          message: 'Access token not provided',
+          timestamp: new Date().toISOString()
+        };
+        res.status(400).json(response);
+        return;
+      }
+
+      // Verify token using JWT utilities
+      const payload = await verifyAccessToken(accessToken);
+
+      if (!payload) {
+        const response: ApiResponse = {
+          success: false,
+          message: 'Invalid or expired token',
+          timestamp: new Date().toISOString()
+        };
+        res.status(401).json(response);
+        return;
+      }
+
+      const response: ApiResponse = {
+        success: true,
+        message: 'Token is valid',
+        data: {
+          valid: true,
+          payload: {
+            userId: payload.userId,
+            email: payload.email,
+            role: payload.role,
+            exp: payload.exp
+          }
+        },
+        timestamp: new Date().toISOString(),
+        requestId: req.headers['x-request-id'] as string
+      };
+
+      res.status(200).json(response);
+
+    } catch (error) {
+      this.handleError(error, res, next);
+    }
+  };
 }
 
 // TODO: Add request ID generation middleware

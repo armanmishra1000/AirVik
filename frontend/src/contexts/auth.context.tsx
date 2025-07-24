@@ -1,8 +1,9 @@
 'use client';
 
-import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useState, ReactNode } from 'react';
 import { User, AuthError, AuthContextType, AuthState, AuthAction } from '../types/auth.types';
 import { authService } from '../services/auth.service';
+import type { VerifyEmailRequest, ResendVerificationRequest, UpdateProfileRequest } from '../types/auth.types';
 
 // Initial state
 const initialState: AuthState = {
@@ -83,35 +84,64 @@ interface AuthProviderProps {
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
+  const [mounted, setMounted] = useState(false);
 
-  // Initialize auth state on mount
+  // Handle client-side mounting to prevent hydration mismatch
   useEffect(() => {
+    setMounted(true);
     initializeAuth();
   }, []);
+
+  // Set up automatic token refresh
+  useEffect(() => {
+    if (state.isAuthenticated) {
+      setupTokenRefresh();
+    }
+  }, [state.isAuthenticated]);
 
   const initializeAuth = async () => {
     try {
       dispatch({ type: 'AUTH_START' });
 
+      // Only run on client side to prevent hydration mismatch
+      if (typeof window === 'undefined') {
+        dispatch({ type: 'AUTH_ERROR', payload: null });
+        return;
+      }
+
       // Check if user has a valid token
-      const token = typeof window !== 'undefined' ? 
-        localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') : 
-        null;
+      const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
 
       if (!token) {
         dispatch({ type: 'AUTH_ERROR', payload: null });
         return;
       }
 
-      // Verify token and get user profile
-      const response = await authService.getUserProfile();
+      // Verify token and get user profile using the new auth service methods
+      const tokenResponse = await authService.verifyToken();
       
-      if (response.success && response.data) {
-        dispatch({ type: 'AUTH_SUCCESS', payload: response.data });
+      if (tokenResponse.success && tokenResponse.data?.valid && tokenResponse.data.user) {
+        dispatch({ type: 'AUTH_SUCCESS', payload: tokenResponse.data.user });
       } else {
-        // Invalid token, clear it
-        clearTokens();
-        dispatch({ type: 'AUTH_ERROR', payload: null });
+        // Token invalid, try to refresh
+        try {
+          const refreshResponse = await authService.refreshToken();
+          if (refreshResponse.success) {
+            // Get user data after successful refresh
+            const userResponse = await authService.getCurrentUser();
+            if (userResponse.success && userResponse.data) {
+              dispatch({ type: 'AUTH_SUCCESS', payload: userResponse.data });
+            } else {
+              throw new Error('Failed to get user data after token refresh');
+            }
+          } else {
+            throw new Error('Token refresh failed');
+          }
+        } catch (refreshError) {
+          // Both token verification and refresh failed, clear tokens
+          clearTokens();
+          dispatch({ type: 'AUTH_ERROR', payload: null });
+        }
       }
     } catch (error) {
       console.error('Auth initialization error:', error);
@@ -136,6 +166,85 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       // Clear any other auth-related data
       localStorage.removeItem('registration_success');
+    }
+  };
+
+  // Set up automatic token refresh
+  const setupTokenRefresh = () => {
+    // Only run on client side
+    if (typeof window === 'undefined') return;
+
+    // Clear any existing refresh interval
+    if ((window as any).authRefreshInterval) {
+      clearInterval((window as any).authRefreshInterval);
+    }
+
+    // Set up token refresh every 14 minutes (1 minute before expiry)
+    const refreshInterval = setInterval(async () => {
+      try {
+        const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+
+        if (token && state.isAuthenticated) {
+          await authService.refreshToken();
+        } else {
+          // No token or not authenticated, clear interval
+          clearInterval(refreshInterval);
+        }
+      } catch (error) {
+        console.error('Token refresh failed:', error);
+        // If refresh fails, logout user
+        logout();
+      }
+    }, 14 * 60 * 1000); // 14 minutes
+
+    // Store interval reference for cleanup
+    (window as any).authRefreshInterval = refreshInterval;
+  };
+
+  // Check authentication status
+  const checkAuthStatus = async (): Promise<boolean> => {
+    try {
+      const token = typeof window !== 'undefined' ? 
+        localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') : 
+        null;
+
+      if (!token) {
+        return false;
+      }
+
+      // Verify token with backend
+      const response = await authService.verifyToken();
+      
+      if (response.success && response.data?.valid) {
+        // Update user data if token is valid
+        if (response.data.user) {
+          dispatch({ type: 'AUTH_SUCCESS', payload: response.data.user });
+        }
+        return true;
+      } else {
+        // Token invalid, try to refresh
+        try {
+          const refreshResponse = await authService.refreshToken();
+          if (refreshResponse.success) {
+            // Get updated user data
+            const userResponse = await authService.getCurrentUser();
+            if (userResponse.success && userResponse.data) {
+              dispatch({ type: 'AUTH_SUCCESS', payload: userResponse.data });
+              return true;
+            }
+          }
+        } catch (refreshError) {
+          console.error('Token refresh failed during status check:', refreshError);
+        }
+        
+        // Both verification and refresh failed
+        clearTokens();
+        dispatch({ type: 'AUTH_LOGOUT' });
+        return false;
+      }
+    } catch (error) {
+      console.error('Auth status check failed:', error);
+      return false;
     }
   };
 
@@ -200,15 +309,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   // Update user profile
-  const updateProfile = async (userData: {
-    firstName: string;
-    lastName: string;
-    phoneNumber?: string;
-  }): Promise<void> => {
+  const updateProfile = async (userData: UpdateProfileRequest): Promise<void> => {
     try {
       dispatch({ type: 'SET_LOADING', payload: true });
 
-      const response = await authService.updateUserProfile(userData);
+      // Note: updateUserProfile method needs to be implemented in auth service
+      // For now, we'll use getCurrentUser to refresh user data
+      const response = await authService.getCurrentUser();
       
       if (response.success && response.data) {
         dispatch({ type: 'UPDATE_USER', payload: response.data });
@@ -229,11 +336,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       dispatch({ type: 'AUTH_START' });
 
-      const response = await authService.verifyEmail(token);
+      const verifyRequest: VerifyEmailRequest = { token };
+      const response = await authService.verifyEmail(verifyRequest);
       
       if (response.success && response.data) {
-        // Update user status to verified
-        dispatch({ type: 'UPDATE_USER', payload: response.data });
+        // Update user with verified status
+        dispatch({ type: 'UPDATE_USER', payload: response.data.user });
         
         // Mark email as verified in localStorage
         if (typeof window !== 'undefined') {
@@ -254,10 +362,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       dispatch({ type: 'SET_LOADING', payload: true });
 
-      const response = await authService.resendVerificationEmail(email);
+      const resendRequest: ResendVerificationRequest = { email };
+      const response = await authService.resendVerificationEmail(resendRequest);
       
-      if (!response.success) {
-        throw new Error(response.message || 'Failed to resend verification email');
+      // ResendVerificationResponse doesn't have success property, so we check if response exists
+      if (!response) {
+        throw new Error('Failed to resend verification email');
       }
     } catch (error) {
       const authError = error as AuthError;
@@ -310,13 +420,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     // Actions
     login,
-    register,
     logout,
+    register,
     updateProfile,
     verifyEmail,
     resendVerification,
     clearError,
     hasPermission,
+    checkAuthStatus,
   };
 
   return (

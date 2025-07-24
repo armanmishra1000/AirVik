@@ -50,7 +50,7 @@ const VerificationSuccess: React.FC<VerificationSuccessProps> = ({
     setResendError(null);
 
     try {
-      await authService.resendVerificationEmail(email);
+      await authService.resendVerificationEmail({ email });
       
       setResendMessage('Verification email sent successfully! Please check your inbox.');
       setCanResend(false);
@@ -78,7 +78,7 @@ const VerificationSuccess: React.FC<VerificationSuccessProps> = ({
    * Navigate to login page
    */
   const handleGoToLogin = useCallback(() => {
-    router.push('/auth/login');
+    router.push('/login');
   }, [router]);
 
   /**

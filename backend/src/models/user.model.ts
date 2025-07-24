@@ -8,22 +8,34 @@ export enum UserStatus {
   SUSPENDED = 'suspended'
 }
 
+// User role enum
+export enum UserRole {
+  ADMIN = 'admin',
+  MANAGER = 'manager',
+  USER = 'user'
+}
+
 // User interface extending MongoDB Document
 export interface IUser extends Document {
   email: string;
-  username: string; // Added username field
+  username: string;
   password: string;
   firstName: string;
   lastName: string;
-  phoneNumber?: string;
-  status: UserStatus;
+  phone?: string;
+  role: UserRole;
+  emailVerified: boolean;
+  isActive: boolean;
+  lastLoginAt?: Date;
+  failedLoginAttempts: number;
+  accountLockedUntil?: Date;
+  status: UserStatus; // Keep for backward compatibility
   emailVerificationToken?: string;
   emailVerificationTokenExpires?: Date;
   emailVerificationTokenRequestCount: number;
   lastEmailVerificationTokenRequest?: Date;
   createdAt: Date;
   updatedAt: Date;
-  lastLoginAt?: Date;
   
   // Virtual fields
   fullName: string;
@@ -32,6 +44,9 @@ export interface IUser extends Document {
   comparePassword(candidatePassword: string): Promise<boolean>;
   generateEmailVerificationToken(): string;
   isEmailVerificationTokenValid(token: string): boolean;
+  isAccountLocked(): boolean;
+  incrementFailedLoginAttempts(): Promise<void>;
+  resetFailedLoginAttempts(): Promise<void>;
 }
 
 // User schema definition
@@ -103,7 +118,7 @@ const UserSchema = new Schema<IUser>({
     }
   },
   
-  phoneNumber: {
+  phone: {
     type: String,
     trim: true,
     validate: {
@@ -114,6 +129,41 @@ const UserSchema = new Schema<IUser>({
       },
       message: 'Please provide a valid phone number'
     }
+  },
+  
+  role: {
+    type: String,
+    enum: Object.values(UserRole),
+    default: UserRole.USER,
+    index: true
+  },
+  
+  emailVerified: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
+  
+  isActive: {
+    type: Boolean,
+    default: true,
+    index: true
+  },
+  
+  lastLoginAt: {
+    type: Date,
+    index: true
+  },
+  
+  failedLoginAttempts: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  
+  accountLockedUntil: {
+    type: Date,
+    index: true
   },
   
   status: {
@@ -139,10 +189,6 @@ const UserSchema = new Schema<IUser>({
   },
   
   lastEmailVerificationTokenRequest: {
-    type: Date
-  },
-  
-  lastLoginAt: {
     type: Date
   }
 }, {
@@ -211,6 +257,41 @@ UserSchema.methods.isEmailVerificationTokenValid = function(token: string): bool
     this.emailVerificationTokenExpires &&
     this.emailVerificationTokenExpires > new Date()
   );
+};
+
+// Instance method to check if account is locked
+UserSchema.methods.isAccountLocked = function(): boolean {
+  return !!(this.accountLockedUntil && this.accountLockedUntil > new Date());
+};
+
+// Instance method to increment failed login attempts
+UserSchema.methods.incrementFailedLoginAttempts = async function(): Promise<void> {
+  // If we have a previous lock that has expired, restart at 1
+  if (this.accountLockedUntil && this.accountLockedUntil < new Date()) {
+    return this.updateOne({
+      $unset: { accountLockedUntil: 1 },
+      $set: { failedLoginAttempts: 1 }
+    });
+  }
+  
+  const updates: any = { $inc: { failedLoginAttempts: 1 } };
+  
+  // If we have reached max attempts and it's not locked yet, lock it
+  if (this.failedLoginAttempts + 1 >= 5 && !this.isAccountLocked()) {
+    updates.$set = { accountLockedUntil: new Date(Date.now() + 2 * 60 * 60 * 1000) }; // 2 hours
+  }
+  
+  return this.updateOne(updates);
+};
+
+// Instance method to reset failed login attempts
+UserSchema.methods.resetFailedLoginAttempts = async function(): Promise<void> {
+  return this.updateOne({
+    $unset: {
+      failedLoginAttempts: 1,
+      accountLockedUntil: 1
+    }
+  });
 };
 
 // Create and export the User model

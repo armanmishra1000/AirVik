@@ -5,25 +5,20 @@ import { AuthProvider } from '../src/contexts/auth.context'
 
 const inter = Inter({ subsets: ['latin'] })
 
-export const metadata: Metadata = {
-  title: 'AirVik - Hotel Booking System',
-  description: 'Modern hotel booking and management system with user registration and email verification',
-  keywords: 'hotel booking, accommodation, travel, reservations',
-  authors: [{ name: 'AirVik Team' }],
-}
-
-export const viewport = {
-  width: 'device-width',
-  initialScale: 1,
-}
-
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html>
+    <html lang="en">
+      <head>
+        <title>AirVik - Hotel Booking System</title>
+        <meta name="description" content="Modern hotel booking and management system with user registration and email verification" />
+        <meta name="keywords" content="hotel booking, accommodation, travel, reservations" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="author" content="AirVik Team" />
+      </head>
       <body className={inter.className}>
         <AuthProvider>
           {children}

@@ -64,18 +64,18 @@ const VerificationResult: React.FC<VerificationResultProps> = ({
       setError(null);
       
       // Call the API endpoint to verify the email token
-      const response = await authService.verifyEmail(token);
+      const response = await authService.verifyEmail({ token });
       
       if (response.success && response.data) {
-        setUser(response.data);
+        setUser(response.data.user);
         setVerificationState('success');
         
         // Store the user data in local storage (but not auth token since login is still required)
-        localStorage.setItem('userEmail', response.data.email);
+        localStorage.setItem('userEmail', response.data.user.email);
         localStorage.setItem('emailVerified', 'true');
         
         if (onSuccess) {
-          onSuccess(response.data);
+          onSuccess(response.data.user);
         }
         
         console.log('Email verification successful:', response.data);
@@ -129,7 +129,7 @@ const VerificationResult: React.FC<VerificationResultProps> = ({
    * Redirect to login page
    */
   const handleRedirectToLogin = useCallback(() => {
-    router.push('/auth/login');
+    router.push('/login');
   }, [router]);
 
   /**

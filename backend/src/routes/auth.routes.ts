@@ -34,6 +34,24 @@ const resendLimiter = rateLimit({
   legacyHeaders: false
 });
 
+// Rate limiting for login attempts (5 attempts per IP per 15min)
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 attempts per IP per 15 minutes
+  message: {
+    success: false,
+    message: 'Too many login attempts. Please try again later.',
+    code: 'RATE_LIMIT_EXCEEDED',
+    timestamp: new Date().toISOString()
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => {
+    // Skip rate limiting for health checks
+    return req.path === '/health';
+  }
+});
+
 // Validation rules for registration
 const registerValidation = [
   body('email')
@@ -80,6 +98,31 @@ const resendVerificationValidation = [
     .isEmail()
     .normalizeEmail()
     .withMessage('Please provide a valid email address')
+];
+
+// Validation rules for login
+const loginValidation = [
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Please provide a valid email address'),
+  
+  body('password')
+    .isLength({ min: 1 })
+    .withMessage('Password is required'),
+  
+  body('rememberMe')
+    .optional()
+    .isBoolean()
+    .withMessage('Remember me must be a boolean value')
+];
+
+// Validation rules for token verification
+const verifyTokenValidation = [
+  body('token')
+    .optional()
+    .isLength({ min: 1 })
+    .withMessage('Token must not be empty')
 ];
 
 // Validation rules for profile update
@@ -142,6 +185,41 @@ router.post('/resend-verification',
   resendLimiter,
   resendVerificationValidation,
   authController.resendVerificationEmail
+);
+
+// ============================================================================
+// AUTHENTICATION ROUTES
+// ============================================================================
+
+// POST /api/v1/auth/login - with rate limiting and validation middleware
+router.post('/login',
+  loginLimiter,
+  loginValidation,
+  authController.login
+);
+
+// POST /api/v1/auth/logout - with authentication middleware
+router.post('/logout',
+  // TODO: Add authenticateToken middleware when implemented
+  authController.logout
+);
+
+// POST /api/v1/auth/refresh - no authentication needed (uses cookie)
+router.post('/refresh',
+  authController.refreshToken
+);
+
+// GET /api/v1/auth/me - with authentication middleware
+router.get('/me',
+  // TODO: Add authenticateToken middleware when implemented
+  authController.getCurrentUser
+);
+
+// POST /api/v1/auth/verify-token - with authentication middleware
+router.post('/verify-token',
+  verifyTokenValidation,
+  // TODO: Add authenticateToken middleware when implemented
+  authController.verifyToken
 );
 
 /**
