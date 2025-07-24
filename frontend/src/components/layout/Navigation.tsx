@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { User } from '../../types/auth.types';
 import { authService } from '../../services/auth.service';
+import { ChevronDownIcon, UserIcon, CogIcon, LogOutIcon } from 'lucide-react';
 
 interface NavigationProps {
   className?: string;
@@ -16,9 +17,25 @@ const Navigation: React.FC<NavigationProps> = ({ className = '' }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     checkAuthStatus();
+  }, []);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsProfileDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, []);
 
   const checkAuthStatus = async () => {
@@ -45,15 +62,21 @@ const Navigation: React.FC<NavigationProps> = ({ className = '' }) => {
     }
   };
 
-  const handleSignOut = () => {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('auth_token');
-      localStorage.removeItem('user_data');
-      sessionStorage.removeItem('auth_token');
-      sessionStorage.removeItem('user_data');
+  const handleSignOut = async () => {
+    try {
+      await authService.logout();
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      // Clear local state and redirect
+      setUser(null);
+      setIsProfileDropdownOpen(false);
+      router.push('/');
     }
-    setUser(null);
-    router.push('/');
+  };
+
+  const getUserInitials = (user: User) => {
+    return `${user.firstName.charAt(0)}${user.lastName.charAt(0)}`.toUpperCase();
   };
 
   const isActivePath = (path: string) => {
@@ -118,80 +141,100 @@ const Navigation: React.FC<NavigationProps> = ({ className = '' }) => {
                 <div className="h-8 w-20 bg-gray-300 rounded"></div>
               </div>
             ) : user ? (
-              <div className="ml-3 relative">
-                <div className="flex items-center space-x-4">
-                  {/* User status indicator */}
-                  {user.status === 'unverified' && (
-                    <Link
-                      href="/auth/resend-verification"
-                      className="bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded-full hover:bg-yellow-200"
-                    >
-                      Verify Email
-                    </Link>
-                  )}
-                  
-                  {/* User menu dropdown */}
-                  <div className="relative">
-                    <button
-                      onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                      className="bg-white rounded-full flex text-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    >
-                      <span className="sr-only">Open user menu</span>
-                      <div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium">
-                        {user.firstName.charAt(0)}{user.lastName.charAt(0)}
-                      </div>
-                    </button>
-                    
-                    {isMobileMenuOpen && (
-                      <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50">
-                        <div className="py-1">
-                          <div className="px-4 py-2 text-sm text-gray-700 border-b">
-                            <div className="font-medium">{user.firstName} {user.lastName}</div>
-                            <div className="text-gray-500">{user.email}</div>
-                          </div>
-                          
-                          <Link
-                            href="/profile"
-                            className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                            onClick={() => setIsMobileMenuOpen(false)}
-                          >
-                            Profile
-                          </Link>
-                          
-                          <Link
-                            href="/profile/edit"
-                            className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                            onClick={() => setIsMobileMenuOpen(false)}
-                          >
-                            Edit Profile
-                          </Link>
-                          
-                          <button
-                            onClick={() => {
-                              handleSignOut();
-                              setIsMobileMenuOpen(false);
-                            }}
-                            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                          >
-                            Sign Out
-                          </button>
-                        </div>
-                      </div>
-                    )}
+              <div className="ml-3 relative" ref={dropdownRef}>
+                <button
+                  onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+                  className="flex items-center space-x-3 text-sm rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 p-2 hover:bg-gray-50 transition-colors"
+                >
+                  <div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium">
+                    {getUserInitials(user)}
                   </div>
-                </div>
+                  <span className="text-sm font-medium text-gray-700">
+                    {user.firstName} {user.lastName}
+                  </span>
+                  {!user.isEmailVerified && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+                      Unverified
+                    </span>
+                  )}
+                  <ChevronDownIcon className="h-4 w-4 text-gray-400" />
+                </button>
+
+                {/* Profile Dropdown */}
+                {isProfileDropdownOpen && (
+                  <div className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-50">
+                    <div className="py-1">
+                      {/* User Info */}
+                      <div className="px-4 py-3 border-b border-gray-100">
+                        <p className="text-sm font-medium text-gray-900">
+                          {user.firstName} {user.lastName}
+                        </p>
+                        <p className="text-sm text-gray-500 truncate">
+                          {user.email}
+                        </p>
+                        {!user.isEmailVerified && (
+                          <p className="text-xs text-yellow-600 mt-1">
+                            Email not verified
+                          </p>
+                        )}
+                      </div>
+                      
+                      {/* Profile Links */}
+                      <Link
+                        href="/profile"
+                        className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                        onClick={() => setIsProfileDropdownOpen(false)}
+                      >
+                        <UserIcon className="h-4 w-4 mr-3 text-gray-400" />
+                        View Profile
+                      </Link>
+                      
+                      <Link
+                        href="/profile/edit"
+                        className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                        onClick={() => setIsProfileDropdownOpen(false)}
+                      >
+                        <CogIcon className="h-4 w-4 mr-3 text-gray-400" />
+                        Edit Profile
+                      </Link>
+                      
+                      {!user.isEmailVerified && (
+                        <Link
+                          href="/auth/verify-email"
+                          className="flex items-center px-4 py-2 text-sm text-yellow-700 hover:bg-yellow-50 transition-colors"
+                          onClick={() => setIsProfileDropdownOpen(false)}
+                        >
+                          <svg className="h-4 w-4 mr-3 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 7.89a2 2 0 002.83 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                          </svg>
+                          Verify Email
+                        </Link>
+                      )}
+                      
+                      <div className="border-t border-gray-100">
+                        <button
+                          onClick={handleSignOut}
+                          className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-red-50 transition-colors"
+                        >
+                          <LogOutIcon className="h-4 w-4 mr-3 text-red-400" />
+                          Sign Out
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="flex items-center space-x-4">
                 <Link
                   href="/auth/login"
-                  className="text-gray-500 hover:text-gray-700 px-3 py-2 text-sm font-medium"
+                  className="text-gray-500 hover:text-gray-700 px-3 py-2 rounded-md text-sm font-medium transition-colors"
                 >
                   Sign In
                 </Link>
                 <Link
-                  href="/register"
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  href="/auth/register"
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
                 >
                   Sign Up
                 </Link>
@@ -262,15 +305,87 @@ const Navigation: React.FC<NavigationProps> = ({ className = '' }) => {
             {user ? (
               <div>
                 <div className="flex items-center px-4">
-                  <div className="flex-shrink-0">
-                    <div className="h-10 w-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-medium">
-                      {user.firstName.charAt(0)}{user.lastName.charAt(0)}
+                  <button
+                    onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+                    className="flex items-center space-x-3 text-sm rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 p-2 hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium">
+                      {getUserInitials(user)}
                     </div>
-                  </div>
-                  <div className="ml-3">
-                    <div className="text-base font-medium text-gray-800">{user.firstName} {user.lastName}</div>
-                    <div className="text-sm font-medium text-gray-500">{user.email}</div>
-                  </div>
+                    <span className="text-sm font-medium text-gray-700">
+                      {user.firstName} {user.lastName}
+                    </span>
+                    {!user.isEmailVerified && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+                        Unverified
+                      </span>
+                    )}
+                    <ChevronDownIcon className="h-4 w-4 text-gray-400" />
+                  </button>
+
+                  {/* Profile Dropdown */}
+                  {isProfileDropdownOpen && (
+                    <div className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-50">
+                      <div className="py-1">
+                        {/* User Info */}
+                        <div className="px-4 py-3 border-b border-gray-100">
+                          <p className="text-sm font-medium text-gray-900">
+                            {user.firstName} {user.lastName}
+                          </p>
+                          <p className="text-sm text-gray-500 truncate">
+                            {user.email}
+                          </p>
+                          {!user.isEmailVerified && (
+                            <p className="text-xs text-yellow-600 mt-1">
+                              Email not verified
+                            </p>
+                          )}
+                        </div>
+                        
+                        {/* Profile Links */}
+                        <Link
+                          href="/profile"
+                          className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                          onClick={() => setIsProfileDropdownOpen(false)}
+                        >
+                          <UserIcon className="h-4 w-4 mr-3 text-gray-400" />
+                          View Profile
+                        </Link>
+                        
+                        <Link
+                          href="/profile/edit"
+                          className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                          onClick={() => setIsProfileDropdownOpen(false)}
+                        >
+                          <CogIcon className="h-4 w-4 mr-3 text-gray-400" />
+                          Edit Profile
+                        </Link>
+                        
+                        {!user.isEmailVerified && (
+                          <Link
+                            href="/auth/resend-verification"
+                            className="flex items-center px-4 py-2 text-sm text-yellow-700 hover:bg-yellow-50 transition-colors"
+                            onClick={() => setIsProfileDropdownOpen(false)}
+                          >
+                            <svg className="h-4 w-4 mr-3 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 7.89a2 2 0 002.83 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                            </svg>
+                            Verify Email
+                          </Link>
+                        )}
+                        
+                        <div className="border-t border-gray-100">
+                          <button
+                            onClick={handleSignOut}
+                            className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-red-50 transition-colors"
+                          >
+                            <LogOutIcon className="h-4 w-4 mr-3 text-red-400" />
+                            Sign Out
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="mt-3 space-y-1">
                   <Link
@@ -308,7 +423,7 @@ const Navigation: React.FC<NavigationProps> = ({ className = '' }) => {
                   Sign In
                 </Link>
                 <Link
-                  href="/register"
+                  href="/auth/register"
                   className="block px-4 py-2 text-base font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100"
                   onClick={() => setIsMobileMenuOpen(false)}
                 >
