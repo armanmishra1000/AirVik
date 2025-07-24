@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/contexts/AuthContext';
-import { LoginRequest } from '@/types/auth-enhanced.types';
+import { useAuth } from '../../contexts/AuthContext';
+import { LoginRequest } from '../../types/auth.types';
+import { validateEmail, validateRequired } from '../../utils/validation';
+import { Eye, EyeOff, Mail, Lock, AlertCircle, Loader2 } from 'lucide-react';
 
 interface LoginFormProps {
   onSuccess?: () => void;
@@ -27,20 +29,19 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
   const [showPassword, setShowPassword] = useState(false);
 
-  // TODO: Import validation utilities from @/utils/validation
   const validateForm = (): boolean => {
     const errors: {[key: string]: string} = {};
     
-    // Email validation
-    if (!formData.email) {
-      errors.email = 'Email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      errors.email = 'Please enter a valid email address';
+    // Email validation using utility
+    const emailValidation = validateEmail(formData.email);
+    if (!emailValidation.isValid) {
+      errors.email = emailValidation.message;
     }
     
-    // Password validation
-    if (!formData.password) {
-      errors.password = 'Password is required';
+    // Password validation using utility
+    const passwordValidation = validateRequired(formData.password, 'Password');
+    if (!passwordValidation.isValid) {
+      errors.password = passwordValidation.message;
     }
     
     setFormErrors(errors);

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   RegisterRequest, 
@@ -10,8 +10,16 @@ import {
   AuthError 
 } from '../../types/auth.types';
 import { authService } from '../../services/auth.service';
-import { validatePassword, validateEmail, validateName, validatePhoneNumber } from '../../utils/validation';
-import { Eye, EyeOff, User, Mail, Phone, Lock, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { 
+  validatePassword, 
+  validateEmail, 
+  validateName, 
+  validatePhoneNumber, 
+  validateConfirmPassword,
+  validateTermsAgreement,
+  validateRegistrationForm 
+} from '../../utils/validation';
+import { Eye, EyeOff, User, Mail, Phone, Lock, CheckCircle, AlertCircle, Loader2, XCircle } from 'lucide-react';
 
 const RegistrationForm: React.FC<RegistrationFormProps> = ({ 
   onSuccess, 
