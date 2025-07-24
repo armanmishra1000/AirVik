@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { User, AuthError, UserStatus } from '../../types/auth.types';
+import { User, AuthError, UserRole } from '../../types/auth.types';
 import { authService } from '../../services/auth.service';
+import { Calendar, Mail, Phone, Clock, User as UserIcon, Shield, Bell, Globe, Calendar as CalendarIcon } from 'lucide-react';
 
 interface UserProfileProps {
   user?: User;
@@ -105,48 +106,93 @@ const UserProfile: React.FC<UserProfileProps> = ({
   };
 
   /**
-   * Get status badge color and text
+   * Get verification status badge color and text
    */
-  const getStatusBadge = (status: UserStatus) => {
-    switch (status) {
-      case 'verified':
+  const getVerificationBadge = (isVerified: boolean) => {
+    if (isVerified) {
+      return {
+        color: 'bg-green-100 text-green-800 border-green-200',
+        text: 'Verified',
+        icon: <CheckIcon className="w-4 h-4 mr-1" />
+      };
+    } else {
+      return {
+        color: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+        text: 'Unverified',
+        icon: <AlertIcon className="w-4 h-4 mr-1" />
+      };
+    }
+  };
+
+  /**
+   * Get active status badge color and text
+   */
+  const getActiveBadge = (isActive: boolean) => {
+    if (isActive) {
+      return {
+        color: 'bg-green-100 text-green-800 border-green-200',
+        text: 'Active',
+        icon: <CheckIcon className="w-4 h-4 mr-1" />
+      };
+    } else {
+      return {
+        color: 'bg-red-100 text-red-800 border-red-200',
+        text: 'Suspended',
+        icon: <XIcon className="w-4 h-4 mr-1" />
+      };
+    }
+  };
+
+  /**
+   * Get role badge color and text
+   */
+  const getRoleBadge = (role: UserRole) => {
+    switch (role) {
+      case UserRole.ADMIN:
         return {
-          color: 'bg-green-100 text-green-800 border-green-200',
-          text: 'Verified',
-          icon: (
-            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-          )
+          color: 'bg-purple-100 text-purple-800 border-purple-200',
+          text: 'Admin',
+          icon: <Shield className="w-4 h-4 mr-1" />
         };
-      case 'unverified':
+      case UserRole.MANAGER:
         return {
-          color: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-          text: 'Unverified',
-          icon: (
-            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-            </svg>
-          )
+          color: 'bg-blue-100 text-blue-800 border-blue-200',
+          text: 'Manager',
+          icon: <Shield className="w-4 h-4 mr-1" />
         };
-      case 'suspended':
+      case UserRole.CUSTOMER:
         return {
-          color: 'bg-red-100 text-red-800 border-red-200',
-          text: 'Suspended',
-          icon: (
-            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L18.364 5.636M5.636 18.364l12.728-12.728" />
-            </svg>
-          )
+          color: 'bg-gray-100 text-gray-800 border-gray-200',
+          text: 'Customer',
+          icon: <UserIcon className="w-4 h-4 mr-1" />
         };
       default:
         return {
           color: 'bg-gray-100 text-gray-800 border-gray-200',
           text: 'Unknown',
-          icon: null
+          icon: <UserIcon className="w-4 h-4 mr-1" />
         };
     }
   };
+
+  // SVG Icons as components for reuse
+  const CheckIcon = ({ className }: { className?: string }) => (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+    </svg>
+  );
+
+  const AlertIcon = ({ className }: { className?: string }) => (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+    </svg>
+  );
+
+  const XIcon = ({ className }: { className?: string }) => (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L18.364 5.636M5.636 18.364l12.728-12.728" />
+    </svg>
+  );
 
   /**
    * Get user initials for avatar
@@ -217,7 +263,9 @@ const UserProfile: React.FC<UserProfileProps> = ({
     );
   }
 
-  const statusBadge = getStatusBadge(user.status);
+  const verificationBadge = getVerificationBadge(user.isEmailVerified);
+  const activeBadge = getActiveBadge(user.isActive);
+  const roleBadge = getRoleBadge(user.role);
 
   return (
     <div className={`bg-white rounded-lg shadow-md overflow-hidden ${className}`}>
@@ -225,20 +273,44 @@ const UserProfile: React.FC<UserProfileProps> = ({
       <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-6 py-8">
         <div className="flex items-center space-x-4">
           {/* Avatar */}
-          <div className="w-16 h-16 bg-white bg-opacity-20 rounded-full flex items-center justify-center text-white text-xl font-bold">
-            {getUserInitials(user.firstName, user.lastName)}
+          <div className="w-20 h-20 bg-white bg-opacity-20 rounded-full flex items-center justify-center text-white text-2xl font-bold">
+            {user.profileImage ? (
+              <img 
+                src={user.profileImage} 
+                alt={`${user.firstName} ${user.lastName}`} 
+                className="w-full h-full rounded-full object-cover"
+              />
+            ) : (
+              getUserInitials(user.firstName, user.lastName)
+            )}
           </div>
           
           {/* User Info */}
           <div className="text-white">
             <h2 className="text-2xl font-bold">{user.firstName} {user.lastName}</h2>
-            <p className="text-blue-100">{user.email}</p>
+            <p className="text-blue-100 flex items-center">
+              <Mail className="w-4 h-4 mr-1" />
+              {user.email}
+            </p>
             
-            {/* Status Badge */}
-            <div className="mt-2">
-              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${statusBadge.color}`}>
-                {statusBadge.icon}
-                {statusBadge.text}
+            {/* Badges */}
+            <div className="mt-2 flex flex-wrap gap-2">
+              {/* Role Badge */}
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${roleBadge.color}`}>
+                {roleBadge.icon}
+                {roleBadge.text}
+              </span>
+              
+              {/* Verification Badge */}
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${verificationBadge.color}`}>
+                {verificationBadge.icon}
+                {verificationBadge.text}
+              </span>
+              
+              {/* Active Badge */}
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${activeBadge.color}`}>
+                {activeBadge.icon}
+                {activeBadge.text}
               </span>
             </div>
           </div>
@@ -248,7 +320,7 @@ const UserProfile: React.FC<UserProfileProps> = ({
       {/* Profile Details */}
       <div className="px-6 py-6">
         {/* Verification Alert for Unverified Users */}
-        {user.status === 'unverified' && (
+        {!user.isEmailVerified && (
           <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
             <div className="flex">
               <svg className="h-5 w-5 text-yellow-400 mr-2 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -274,45 +346,105 @@ const UserProfile: React.FC<UserProfileProps> = ({
         )}
 
         {/* Profile Information */}
-        <div className="space-y-6">
+        <div className="space-y-8">
+          {/* Basic Information */}
           <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Profile Information</h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+              <UserIcon className="w-5 h-5 mr-2 text-blue-500" />
+              Basic Information
+            </h3>
             
             <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
+              <div className="p-3 bg-gray-50 rounded-md">
                 <dt className="text-sm font-medium text-gray-500">First Name</dt>
                 <dd className="mt-1 text-sm text-gray-900">{user.firstName}</dd>
               </div>
               
-              <div>
+              <div className="p-3 bg-gray-50 rounded-md">
                 <dt className="text-sm font-medium text-gray-500">Last Name</dt>
                 <dd className="mt-1 text-sm text-gray-900">{user.lastName}</dd>
               </div>
               
-              <div>
-                <dt className="text-sm font-medium text-gray-500">Email Address</dt>
+              <div className="p-3 bg-gray-50 rounded-md">
+                <dt className="text-sm font-medium text-gray-500 flex items-center">
+                  <Mail className="w-4 h-4 mr-1 text-blue-500" />
+                  Email Address
+                </dt>
                 <dd className="mt-1 text-sm text-gray-900">{user.email}</dd>
               </div>
               
-              <div>
-                <dt className="text-sm font-medium text-gray-500">Phone Number</dt>
+              <div className="p-3 bg-gray-50 rounded-md">
+                <dt className="text-sm font-medium text-gray-500 flex items-center">
+                  <Phone className="w-4 h-4 mr-1 text-blue-500" />
+                  Phone Number
+                </dt>
                 <dd className="mt-1 text-sm text-gray-900">
-                  {user.phoneNumber || 'Not provided'}
+                  {user.phone || 'Not provided'}
                 </dd>
               </div>
               
-              <div>
-                <dt className="text-sm font-medium text-gray-500">Account Status</dt>
+              <div className="p-3 bg-gray-50 rounded-md">
+                <dt className="text-sm font-medium text-gray-500 flex items-center">
+                  <CalendarIcon className="w-4 h-4 mr-1 text-blue-500" />
+                  Date of Birth
+                </dt>
+                <dd className="mt-1 text-sm text-gray-900">
+                  {user.dateOfBirth ? new Date(user.dateOfBirth).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  }) : 'Not provided'}
+                </dd>
+              </div>
+              
+              <div className="p-3 bg-gray-50 rounded-md">
+                <dt className="text-sm font-medium text-gray-500 flex items-center">
+                  <Shield className="w-4 h-4 mr-1 text-blue-500" />
+                  Account Role
+                </dt>
                 <dd className="mt-1">
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${statusBadge.color}`}>
-                    {statusBadge.icon}
-                    {statusBadge.text}
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${roleBadge.color}`}>
+                    {roleBadge.icon}
+                    {roleBadge.text}
+                  </span>
+                </dd>
+              </div>
+            </dl>
+          </div>
+
+          {/* Account Status */}
+          <div>
+            <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+              <Shield className="w-5 h-5 mr-2 text-blue-500" />
+              Account Status
+            </h3>
+            
+            <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="p-3 bg-gray-50 rounded-md">
+                <dt className="text-sm font-medium text-gray-500">Email Verification</dt>
+                <dd className="mt-1">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${verificationBadge.color}`}>
+                    {verificationBadge.icon}
+                    {verificationBadge.text}
                   </span>
                 </dd>
               </div>
               
-              <div>
-                <dt className="text-sm font-medium text-gray-500">Member Since</dt>
+              <div className="p-3 bg-gray-50 rounded-md">
+                <dt className="text-sm font-medium text-gray-500">Account Status</dt>
+                <dd className="mt-1">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${activeBadge.color}`}>
+                    {activeBadge.icon}
+                    {activeBadge.text}
+                  </span>
+                </dd>
+              </div>
+              
+              <div className="p-3 bg-gray-50 rounded-md">
+                <dt className="text-sm font-medium text-gray-500 flex items-center">
+                  <Calendar className="w-4 h-4 mr-1 text-blue-500" />
+                  Member Since
+                </dt>
                 <dd className="mt-1 text-sm text-gray-900">
                   {new Date(user.createdAt).toLocaleDateString('en-US', {
                     year: 'numeric',
@@ -321,8 +453,101 @@ const UserProfile: React.FC<UserProfileProps> = ({
                   })}
                 </dd>
               </div>
+              
+              <div className="p-3 bg-gray-50 rounded-md">
+                <dt className="text-sm font-medium text-gray-500 flex items-center">
+                  <Clock className="w-4 h-4 mr-1 text-blue-500" />
+                  Last Login
+                </dt>
+                <dd className="mt-1 text-sm text-gray-900">
+                  {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  }) : 'Not available'}
+                </dd>
+              </div>
             </dl>
           </div>
+
+          {/* Preferences */}
+          <div>
+            <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+              <Bell className="w-5 h-5 mr-2 text-blue-500" />
+              Preferences
+            </h3>
+            
+            <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div className="p-3 bg-gray-50 rounded-md">
+                <dt className="text-sm font-medium text-gray-500">Newsletter</dt>
+                <dd className="mt-1 text-sm text-gray-900">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${user.preferences?.newsletter ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                    {user.preferences?.newsletter ? 'Subscribed' : 'Not Subscribed'}
+                  </span>
+                </dd>
+              </div>
+              
+              <div className="p-3 bg-gray-50 rounded-md">
+                <dt className="text-sm font-medium text-gray-500">Notifications</dt>
+                <dd className="mt-1 text-sm text-gray-900">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${user.preferences?.notifications ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                    {user.preferences?.notifications ? 'Enabled' : 'Disabled'}
+                  </span>
+                </dd>
+              </div>
+              
+              <div className="p-3 bg-gray-50 rounded-md">
+                <dt className="text-sm font-medium text-gray-500 flex items-center">
+                  <Globe className="w-4 h-4 mr-1 text-blue-500" />
+                  Language
+                </dt>
+                <dd className="mt-1 text-sm text-gray-900">
+                  {user.preferences?.language || 'English'}
+                </dd>
+              </div>
+            </dl>
+          </div>
+          
+          {/* Registration Metadata */}
+          {user.metadata && (
+            <div className="mt-6">
+              <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                <UserIcon className="w-5 h-5 mr-2 text-blue-500" />
+                Registration Details
+              </h3>
+              
+              <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {user.metadata.registrationIP && (
+                  <div className="p-3 bg-gray-50 rounded-md">
+                    <dt className="text-sm font-medium text-gray-500">Registration IP</dt>
+                    <dd className="mt-1 text-sm text-gray-900 font-mono text-xs">
+                      {user.metadata.registrationIP}
+                    </dd>
+                  </div>
+                )}
+                
+                {user.metadata.source && (
+                  <div className="p-3 bg-gray-50 rounded-md">
+                    <dt className="text-sm font-medium text-gray-500">Registration Source</dt>
+                    <dd className="mt-1 text-sm text-gray-900 capitalize">
+                      {user.metadata.source}
+                    </dd>
+                  </div>
+                )}
+                
+                {user.metadata.userAgent && (
+                  <div className="p-3 bg-gray-50 rounded-md col-span-1 sm:col-span-2">
+                    <dt className="text-sm font-medium text-gray-500">User Agent</dt>
+                    <dd className="mt-1 text-xs text-gray-900 font-mono break-all">
+                      {user.metadata.userAgent}
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            </div>
+          )}
         </div>
 
         {/* Action Buttons */}
@@ -334,7 +559,7 @@ const UserProfile: React.FC<UserProfileProps> = ({
             Edit Profile
           </button>
           
-          {user.status === 'unverified' && (
+          {!user.isEmailVerified && (
             <button
               onClick={handleResendVerification}
               disabled={isResendingVerification}

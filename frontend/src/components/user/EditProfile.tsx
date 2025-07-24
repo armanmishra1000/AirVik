@@ -4,7 +4,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { User, UpdateProfileRequest, AuthError } from '../../types/auth.types';
 import { authService } from '../../services/auth.service';
-import { validateName, validatePhoneNumber } from '../../utils/validation';
+import { validateName, validatePhoneNumber, validateRequired } from '../../utils/validation';
+import { Camera, Upload, X } from 'lucide-react';
 
 interface EditProfileProps {
   user?: User;
@@ -17,13 +18,23 @@ interface EditProfileProps {
 interface FormData {
   firstName: string;
   lastName: string;
-  phoneNumber: string;
+  phone: string;
+  dateOfBirth: string;
+  profileImage: string;
+  preferences: {
+    newsletter: boolean;
+    notifications: boolean;
+    language: string;
+  };
 }
 
 interface FormErrors {
   firstName?: string;
   lastName?: string;
-  phoneNumber?: string;
+  phone?: string;
+  dateOfBirth?: string;
+  'preferences.language'?: string;
+  [key: string]: string | undefined;
 }
 
 const EditProfile: React.FC<EditProfileProps> = ({
@@ -41,7 +52,14 @@ const EditProfile: React.FC<EditProfileProps> = ({
   const [formData, setFormData] = useState<FormData>({
     firstName: initialUser?.firstName || '',
     lastName: initialUser?.lastName || '',
-    phoneNumber: initialUser?.phoneNumber || ''
+    phone: initialUser?.phone || '',
+    dateOfBirth: initialUser?.dateOfBirth || '',
+    profileImage: initialUser?.profileImage || '',
+    preferences: {
+      newsletter: initialUser?.preferences?.newsletter || false,
+      notifications: initialUser?.preferences?.notifications || false,
+      language: initialUser?.preferences?.language || 'en'
+    }
   });
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -66,7 +84,14 @@ const EditProfile: React.FC<EditProfileProps> = ({
       const newFormData = {
         firstName: user.firstName,
         lastName: user.lastName,
-        phoneNumber: user.phoneNumber || ''
+        phone: user.phone || '',
+        dateOfBirth: user.dateOfBirth || '',
+        profileImage: user.profileImage || '',
+        preferences: {
+          newsletter: user.preferences?.newsletter || false,
+          notifications: user.preferences?.notifications || false,
+          language: user.preferences?.language || 'en'
+        }
       };
       setFormData(newFormData);
       setHasChanges(false);
@@ -81,7 +106,11 @@ const EditProfile: React.FC<EditProfileProps> = ({
       const hasFormChanges = 
         formData.firstName !== user.firstName ||
         formData.lastName !== user.lastName ||
-        formData.phoneNumber !== (user.phoneNumber || '');
+        formData.phone !== (user.phone || '') ||
+        formData.dateOfBirth !== (user.dateOfBirth || '') ||
+        formData.preferences.newsletter !== (user.preferences?.newsletter || false) ||
+        formData.preferences.notifications !== (user.preferences?.notifications || false) ||
+        formData.preferences.language !== (user.preferences?.language || 'en');
       setHasChanges(hasFormChanges);
     }
   }, [formData, user]);
@@ -118,12 +147,12 @@ const EditProfile: React.FC<EditProfileProps> = ({
   /**
    * Handle input field changes
    */
-  const handleInputChange = useCallback((field: keyof FormData, value: string) => {
+  const handleInputChange = useCallback((field: keyof FormData, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     
     // Clear field error when user starts typing
-    if (formErrors[field]) {
-      setFormErrors(prev => ({ ...prev, [field]: undefined }));
+    if (formErrors[field as string]) {
+      setFormErrors(prev => ({ ...prev, [field as string]: undefined }));
     }
     
     // Clear messages
@@ -132,19 +161,88 @@ const EditProfile: React.FC<EditProfileProps> = ({
   }, [formErrors]);
 
   /**
+   * Handle preference changes
+   */
+  const handlePreferenceChange = useCallback((prefName: keyof typeof formData.preferences, value: string | boolean) => {
+    setFormData(prev => ({
+      ...prev,
+      preferences: {
+        ...prev.preferences,
+        [prefName]: value
+      }
+    }));
+    
+    // Clear field error when user changes preference
+    const fieldErrorKey = `preferences.${prefName}` as keyof FormErrors;
+    if (formErrors[fieldErrorKey]) {
+      setFormErrors(prev => ({ ...prev, [fieldErrorKey]: undefined }));
+    }
+    
+    // Clear messages
+    setSuccessMessage(null);
+    setErrorMessage(null);
+  }, [formErrors]);
+
+  /**
+   * Validate date of birth
+   */
+  const validateDateOfBirth = (dateString: string): { isValid: boolean; message: string } => {
+    if (!dateString) return { isValid: true, message: 'Date of birth is optional' };
+    
+    const date = new Date(dateString);
+    const today = new Date();
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      return { isValid: false, message: 'Please enter a valid date' };
+    }
+    
+    // Check if date is in the future
+    if (date > today) {
+      return { isValid: false, message: 'Date of birth cannot be in the future' };
+    }
+    
+    // Check if user is at least 18 years old (for hotel booking)
+    const eighteenYearsAgo = new Date();
+    eighteenYearsAgo.setFullYear(today.getFullYear() - 18);
+    
+    if (date > eighteenYearsAgo) {
+      return { isValid: false, message: 'You must be at least 18 years old' };
+    }
+    
+    // Check if date is too far in the past (e.g., more than 120 years)
+    const maxAge = new Date();
+    maxAge.setFullYear(today.getFullYear() - 120);
+    
+    if (date < maxAge) {
+      return { isValid: false, message: 'Please enter a valid date of birth' };
+    }
+    
+    return { isValid: true, message: 'Valid date of birth' };
+  };
+
+  /**
    * Validate individual field
    */
-  const validateField = (field: keyof FormData, value: string): string | undefined => {
+  const validateField = (field: string, value: string | boolean): string | undefined => {
     switch (field) {
       case 'firstName':
       case 'lastName':
-        const nameValidation = validateName(value);
+        const nameValidation = validateName(value as string);
         return nameValidation.isValid ? undefined : nameValidation.message;
       
-      case 'phoneNumber':
-        if (value.trim() === '') return undefined; // Phone is optional
-        const phoneValidation = validatePhoneNumber(value);
+      case 'phone':
+        if ((value as string).trim() === '') return undefined; // Phone is optional
+        const phoneValidation = validatePhoneNumber(value as string);
         return phoneValidation.isValid ? undefined : phoneValidation.message;
+      
+      case 'dateOfBirth':
+        const dobValidation = validateDateOfBirth(value as string);
+        return dobValidation.isValid ? undefined : dobValidation.message;
+      
+      case 'preferences.language':
+        const languageValidation = validateRequired(value as string, 'Language');
+        return languageValidation.isValid ? undefined : languageValidation.message;
       
       default:
         return undefined;
@@ -166,8 +264,16 @@ const EditProfile: React.FC<EditProfileProps> = ({
     if (lastNameError) errors.lastName = lastNameError;
     
     // Validate phone number
-    const phoneError = validateField('phoneNumber', formData.phoneNumber);
-    if (phoneError) errors.phoneNumber = phoneError;
+    const phoneError = validateField('phone', formData.phone);
+    if (phoneError) errors.phone = phoneError;
+    
+    // Validate date of birth
+    const dobError = validateField('dateOfBirth', formData.dateOfBirth);
+    if (dobError) errors.dateOfBirth = dobError;
+    
+    // Validate language
+    const languageError = validateField('preferences.language', formData.preferences.language);
+    if (languageError) errors['preferences.language'] = languageError;
     
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
@@ -191,7 +297,13 @@ const EditProfile: React.FC<EditProfileProps> = ({
       const updateData: UpdateProfileRequest = {
         firstName: formData.firstName.trim(),
         lastName: formData.lastName.trim(),
-        phoneNumber: formData.phoneNumber.trim() || undefined
+        phone: formData.phone.trim() || undefined,
+        dateOfBirth: formData.dateOfBirth || undefined,
+        preferences: {
+          newsletter: formData.preferences.newsletter,
+          notifications: formData.preferences.notifications,
+          language: formData.preferences.language
+        }
       };
 
       const response = await authService.updateUserProfile(updateData);
@@ -241,8 +353,18 @@ const EditProfile: React.FC<EditProfileProps> = ({
   /**
    * Handle field blur for validation
    */
-  const handleFieldBlur = (field: keyof FormData) => {
-    const error = validateField(field, formData[field]);
+  const handleFieldBlur = (field: string) => {
+    let value: string | boolean;
+    
+    // Handle nested preference fields
+    if (field.startsWith('preferences.')) {
+      const prefName = field.split('.')[1] as keyof typeof formData.preferences;
+      value = formData.preferences[prefName];
+    } else {
+      value = formData[field as keyof FormData] as string | boolean;
+    }
+    
+    const error = validateField(field, value);
     if (error) {
       setFormErrors(prev => ({ ...prev, [field]: error }));
     }
@@ -399,25 +521,115 @@ const EditProfile: React.FC<EditProfileProps> = ({
 
         {/* Phone Number Field */}
         <div>
-          <label htmlFor="phoneNumber" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">
             Phone Number
           </label>
           <input
             type="tel"
-            id="phoneNumber"
-            value={formData.phoneNumber}
-            onChange={(e) => handleInputChange('phoneNumber', e.target.value)}
-            onBlur={() => handleFieldBlur('phoneNumber')}
+            id="phone"
+            value={formData.phone}
+            onChange={(e) => handleInputChange('phone', e.target.value)}
+            onBlur={() => handleFieldBlur('phone')}
             className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-              formErrors.phoneNumber ? 'border-red-500' : 'border-gray-300'
+              formErrors.phone ? 'border-red-500' : 'border-gray-300'
             }`}
             placeholder="Enter your phone number (optional)"
             disabled={isSubmitting}
           />
-          {formErrors.phoneNumber && (
-            <p className="text-red-500 text-sm mt-1">{formErrors.phoneNumber}</p>
+          {formErrors.phone && (
+            <p className="text-red-500 text-sm mt-1">{formErrors.phone}</p>
           )}
           <p className="text-xs text-gray-500 mt-1">Phone number is optional</p>
+        </div>
+
+        {/* Date of Birth Field */}
+        <div>
+          <label htmlFor="dateOfBirth" className="block text-sm font-medium text-gray-700 mb-1">
+            Date of Birth
+          </label>
+          <input
+            type="date"
+            id="dateOfBirth"
+            value={formData.dateOfBirth}
+            onChange={(e) => handleInputChange('dateOfBirth', e.target.value)}
+            onBlur={() => handleFieldBlur('dateOfBirth')}
+            className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              formErrors.dateOfBirth ? 'border-red-500' : 'border-gray-300'
+            }`}
+            max={new Date().toISOString().split('T')[0]} // Prevent future dates
+            disabled={isSubmitting}
+          />
+          {formErrors.dateOfBirth && (
+            <p className="text-red-500 text-sm mt-1">{formErrors.dateOfBirth}</p>
+          )}
+          <p className="text-xs text-gray-500 mt-1">Date of birth is optional</p>
+        </div>
+
+        {/* Preferences Section */}
+        <div className="pt-4 border-t">
+          <h3 className="text-lg font-medium text-gray-900 mb-3">Preferences</h3>
+          
+          {/* Newsletter Preference */}
+          <div className="flex items-center mb-4">
+            <input
+              type="checkbox"
+              id="newsletter"
+              checked={formData.preferences.newsletter}
+              onChange={(e) => handlePreferenceChange('newsletter', e.target.checked)}
+              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              disabled={isSubmitting}
+            />
+            <label htmlFor="newsletter" className="ml-2 block text-sm text-gray-700">
+              Subscribe to newsletter
+            </label>
+          </div>
+          
+          {/* Notifications Preference */}
+          <div className="flex items-center mb-4">
+            <input
+              type="checkbox"
+              id="notifications"
+              checked={formData.preferences.notifications}
+              onChange={(e) => handlePreferenceChange('notifications', e.target.checked)}
+              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              disabled={isSubmitting}
+            />
+            <label htmlFor="notifications" className="ml-2 block text-sm text-gray-700">
+              Enable notifications
+            </label>
+          </div>
+          
+          {/* Language Preference */}
+          <div>
+            <label htmlFor="language" className="block text-sm font-medium text-gray-700 mb-1">
+              Preferred Language *
+            </label>
+            <select
+              id="language"
+              value={formData.preferences.language}
+              onChange={(e) => handlePreferenceChange('language', e.target.value)}
+              onBlur={() => handleFieldBlur('preferences.language')}
+              className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                formErrors['preferences.language'] ? 'border-red-500' : 'border-gray-300'
+              }`}
+              disabled={isSubmitting}
+              required
+            >
+              <option value="en">English</option>
+              <option value="es">Spanish</option>
+              <option value="fr">French</option>
+              <option value="de">German</option>
+              <option value="it">Italian</option>
+              <option value="pt">Portuguese</option>
+              <option value="zh">Chinese</option>
+              <option value="ja">Japanese</option>
+              <option value="ar">Arabic</option>
+              <option value="ru">Russian</option>
+            </select>
+            {formErrors['preferences.language'] && (
+              <p className="text-red-500 text-sm mt-1">{formErrors['preferences.language']}</p>
+            )}
+          </div>
         </div>
 
         {/* Action Buttons */}
