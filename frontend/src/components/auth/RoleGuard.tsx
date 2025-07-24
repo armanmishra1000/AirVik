@@ -1,6 +1,6 @@
 'use client';
 
-import React, { ReactNode } from 'react';
+import React, { ReactNode, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../contexts/AuthContext';
 import { UserRole } from '../../types/auth.types';
@@ -11,6 +11,8 @@ interface RoleGuardProps {
   allowedRoles: UserRole[];
   fallback?: ReactNode;
   redirectTo?: string;
+  showUnauthorized?: boolean;
+  loadingMessage?: string;
 }
 
 /**
@@ -23,6 +25,8 @@ const RoleGuard: React.FC<RoleGuardProps> = ({
   allowedRoles,
   fallback,
   redirectTo = '/unauthorized',
+  showUnauthorized = false,
+  loadingMessage,
 }) => {
   const { user, isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
@@ -63,18 +67,32 @@ const RoleGuard: React.FC<RoleGuardProps> = ({
     </div>
   );
 
-  // Use RouteGuard for authentication check
+  // Check role access and handle redirect
+  useEffect(() => {
+    if (!isLoading && isAuthenticated && user && !allowedRoles.includes(user.role)) {
+      if (!showUnauthorized) {
+        router.push(redirectTo);
+      }
+    }
+  }, [isLoading, isAuthenticated, user, allowedRoles, router, redirectTo, showUnauthorized]);
+
+  // Helper function to check if user has required role
+  const hasRequiredRole = (): boolean => {
+    if (!user || !isAuthenticated) return false;
+    return allowedRoles.includes(user.role);
+  };
+
+  // Use RouteGuard for authentication check first
   return (
-    <RouteGuard requireAuth={true} fallback={isLoading ? undefined : unauthorizedFallback}>
-      {isAuthenticated && user && allowedRoles.includes(user.role) ? (
+    <RouteGuard 
+      requireAuth={true} 
+      loadingMessage={loadingMessage}
+      fallback={isLoading ? undefined : (showUnauthorized && !hasRequiredRole() ? unauthorizedFallback : undefined)}
+    >
+      {hasRequiredRole() ? (
         children
       ) : (
-        // If user is authenticated but doesn't have the required role, redirect or show fallback
-        React.useEffect(() => {
-          if (!isLoading && isAuthenticated && user && !allowedRoles.includes(user.role)) {
-            router.push(redirectTo);
-          }
-        }, [isLoading, isAuthenticated, user, router, redirectTo])
+        showUnauthorized ? unauthorizedFallback : null
       )}
     </RouteGuard>
   );
