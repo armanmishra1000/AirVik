@@ -2,9 +2,9 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import UserProfile from '../../src/components/user/UserProfile';
-import { User, AuthError } from '../../src/types/auth.types';
-import { authService } from '../../src/services/auth.service';
+import UserProfile from '../../components/user/UserProfile';
+import { User, AuthError } from '../../types/auth.types';
+import { authService } from '../../services/auth.service';
 
 export default function ProfilePage() {
   const router = useRouter();

@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useParams } from 'next/navigation';
-import VerificationResult from '../../../../src/components/auth/VerificationResult';
+import VerificationResult from '../../../../components/auth/VerificationResult';
 
 export default function VerifyTokenPage() {
   const params = useParams();

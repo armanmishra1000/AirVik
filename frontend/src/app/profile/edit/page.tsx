@@ -2,9 +2,9 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import EditProfile from '../../../src/components/user/EditProfile';
-import { User, AuthError } from '../../../src/types/auth.types';
-import { authService } from '../../../src/services/auth.service';
+import EditProfile from '../../../components/user/EditProfile';
+import { User, AuthError } from '../../../types/auth.types';
+import { authService } from '../../../services/auth.service';
 
 export default function EditProfilePage() {
   const router = useRouter();

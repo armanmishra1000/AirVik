@@ -1,6 +1,6 @@
 import React from 'react';
 import { Metadata } from 'next';
-import ResendVerification from '../../../src/components/auth/ResendVerification';
+import ResendVerification from '../../../components/auth/ResendVerification';
 
 export const metadata: Metadata = {
   title: 'Resend Verification Email - AirVik',
