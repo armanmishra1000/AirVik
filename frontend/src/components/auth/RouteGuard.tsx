@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useEffect, ReactNode } from 'react';
+import React, { useEffect, useState, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '../../contexts/AuthContext';
+import { Permission } from '../../types/auth.types';
 
 interface RouteGuardProps {
   children: ReactNode;
@@ -10,6 +11,8 @@ interface RouteGuardProps {
   requireVerification?: boolean;
   redirectTo?: string;
   fallback?: ReactNode;
+  permission?: Permission;
+  showVerificationPrompt?: boolean;
 }
 
 const RouteGuard: React.FC<RouteGuardProps> = ({
@@ -18,49 +21,88 @@ const RouteGuard: React.FC<RouteGuardProps> = ({
   requireVerification = false,
   redirectTo,
   fallback,
+  permission,
+  showVerificationPrompt = false,
 }) => {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading, hasPermission } = useAuth();
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
   useEffect(() => {
     if (isLoading) return; // Wait for auth state to load
-
-    // Check authentication requirement
-    if (requireAuth && !isAuthenticated) {
-      const redirect = redirectTo || `/auth/login?redirect=${encodeURIComponent(pathname)}`;
-      router.push(redirect);
-      return;
-    }
-
-    // Check verification requirement
-    if (requireVerification && user && user.status !== 'verified') {
-      router.push('/auth/resend-verification');
-      return;
-    }
-
-    // If user is authenticated but trying to access auth pages, redirect to home
-    if (isAuthenticated && isAuthPage(pathname)) {
-      router.push('/');
-      return;
-    }
-  }, [isAuthenticated, isLoading, user, requireAuth, requireVerification, router, pathname, redirectTo]);
+    
+    const checkAccess = async () => {
+      setIsCheckingAuth(true);
+      
+      try {
+        // Check authentication requirement
+        if (requireAuth && !isAuthenticated) {
+          const redirect = redirectTo || `/auth/login?redirect=${encodeURIComponent(pathname)}`;
+          router.push(redirect);
+          return;
+        }
+        
+        // Check permission requirement if specified
+        if (permission && !hasPermission(permission)) {
+          // For verification permission, handle special case
+          if (permission === Permission.VERIFIED && showVerificationPrompt && user) {
+            router.push(`/auth/verification-prompt?returnUrl=${encodeURIComponent(pathname)}`);
+            return;
+          }
+          
+          // For admin permission, redirect to unauthorized page
+          if (permission === Permission.ADMIN) {
+            router.push('/unauthorized');
+            return;
+          }
+          
+          // For other permissions, redirect to login
+          const redirect = redirectTo || `/auth/login?redirect=${encodeURIComponent(pathname)}`;
+          router.push(redirect);
+          return;
+        }
+        
+        // Check verification requirement (legacy support)
+        if (requireVerification && user && !user.isEmailVerified) {
+          if (showVerificationPrompt) {
+            router.push(`/auth/verification-prompt?returnUrl=${encodeURIComponent(pathname)}`);
+          } else {
+            router.push('/auth/resend-verification');
+          }
+          return;
+        }
+        
+        // If user is authenticated but trying to access auth pages, redirect to home
+        if (isAuthenticated && isAuthPage(pathname)) {
+          router.push('/');
+          return;
+        }
+      } finally {
+        setIsCheckingAuth(false);
+      }
+    };
+    
+    checkAccess();
+  }, [isAuthenticated, isLoading, user, requireAuth, requireVerification, permission, router, pathname, redirectTo, hasPermission, showVerificationPrompt]);
 
   // Helper function to check if current path is an auth page
   const isAuthPage = (path: string): boolean => {
     const authPaths = [
       '/auth/login',
-      '/register',
-      '/register/success',
+      '/auth/register',
+      '/auth/register/success',
       '/auth/verify',
       '/auth/resend-verification',
+      '/auth/forgot-password',
+      '/auth/reset-password',
     ];
     
     return authPaths.some(authPath => path.startsWith(authPath));
   };
 
   // Show loading state
-  if (isLoading) {
+  if (isLoading || isCheckingAuth) {
     return (
       fallback || (
         <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
@@ -70,7 +112,7 @@ const RouteGuard: React.FC<RouteGuardProps> = ({
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
               </div>
               <p className="mt-4 text-center text-sm text-gray-600">
-                Loading...
+                {isLoading ? 'Loading authentication...' : 'Checking permissions...'}
               </p>
             </div>
           </div>
@@ -84,7 +126,11 @@ const RouteGuard: React.FC<RouteGuardProps> = ({
     return null; // Will redirect in useEffect
   }
 
-  if (requireVerification && user && user.status !== 'verified') {
+  if (permission && !hasPermission(permission)) {
+    return null; // Will redirect in useEffect
+  }
+
+  if (requireVerification && user && !user.isEmailVerified) {
     return null; // Will redirect in useEffect
   }
 
@@ -102,7 +148,9 @@ export const withAuth = <P extends object>(
   options: {
     requireAuth?: boolean;
     requireVerification?: boolean;
+    permission?: Permission;
     redirectTo?: string;
+    showVerificationPrompt?: boolean;
   } = {}
 ) => {
   const WrappedComponent: React.FC<P> = (props) => {
@@ -110,7 +158,9 @@ export const withAuth = <P extends object>(
       <RouteGuard
         requireAuth={options.requireAuth}
         requireVerification={options.requireVerification}
+        permission={options.permission}
         redirectTo={options.redirectTo}
+        showVerificationPrompt={options.showVerificationPrompt}
       >
         <Component {...props} />
       </RouteGuard>
@@ -123,20 +173,40 @@ export const withAuth = <P extends object>(
 };
 
 // Specific guard components for common use cases
-export const AuthGuard: React.FC<{ children: ReactNode }> = ({ children }) => (
-  <RouteGuard requireAuth={true}>
+export const AuthGuard: React.FC<{ children: ReactNode; redirectTo?: string }> = ({ children, redirectTo }) => (
+  <RouteGuard requireAuth={true} redirectTo={redirectTo}>
     {children}
   </RouteGuard>
 );
 
-export const VerifiedGuard: React.FC<{ children: ReactNode }> = ({ children }) => (
-  <RouteGuard requireAuth={true} requireVerification={true}>
+export const VerifiedGuard: React.FC<{ children: ReactNode; redirectTo?: string; showPrompt?: boolean }> = ({ 
+  children, 
+  redirectTo,
+  showPrompt = false 
+}) => (
+  <RouteGuard 
+    requireAuth={true} 
+    permission={Permission.VERIFIED}
+    redirectTo={redirectTo}
+    showVerificationPrompt={showPrompt}
+  >
     {children}
   </RouteGuard>
 );
 
-export const GuestGuard: React.FC<{ children: ReactNode }> = ({ children }) => (
-  <RouteGuard requireAuth={false}>
+export const GuestGuard: React.FC<{ children: ReactNode; redirectTo?: string }> = ({ children, redirectTo }) => (
+  <RouteGuard requireAuth={false} redirectTo={redirectTo || '/'}>
+    {children}
+  </RouteGuard>
+);
+
+export const BookingGuard: React.FC<{ children: ReactNode; redirectTo?: string }> = ({ children, redirectTo }) => (
+  <RouteGuard 
+    requireAuth={true} 
+    permission={Permission.BOOKING}
+    redirectTo={redirectTo}
+    showVerificationPrompt={true}
+  >
     {children}
   </RouteGuard>
 );
