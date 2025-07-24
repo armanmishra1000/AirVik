@@ -21,7 +21,7 @@ import {
 
 // API configuration
 const API_CONFIG: ApiConfig = {
-  baseUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api/v1',
+  baseUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api',
   timeout: 10000, // 10 seconds
   retryAttempts: 3,
   version: 'v1'
@@ -104,7 +104,7 @@ export class AuthService {
           if (refreshToken && !error.config?.url?.includes('/auth/refresh')) {
             try {
               // Attempt to refresh the token
-              const response = await this.api.post<ApiResponse<TokenPair>>('/auth/refresh', { refreshToken });
+              const response = await this.api.post<ApiResponse<TokenPair>>('/v1/auth/refresh', { refreshToken });
               
               if (response.data.success && response.data.data) {
                 // Store new tokens
@@ -124,42 +124,42 @@ export class AuthService {
               this.handleTokenExpiration();
             }
           } else {
-            // No refresh token or refresh failed, handle expiration
+            // No refresh token or already trying to refresh, handle expiration
             this.handleTokenExpiration();
           }
         }
-
+        
         // Handle rate limiting (429)
+        let retryAfterSeconds: number | undefined;
         if (error.response?.status === 429) {
-          // Handle rate limiting with retry-after header
           const retryAfter = error.response.headers['retry-after'];
-          console.warn(`Rate limited. Retry after ${retryAfter} seconds`);
-          
-          // Add retry-after information to error
-          const authError = this.createAuthError(error);
-          authError.retryAfter = parseInt(retryAfter, 10) || 60;
-          return Promise.reject(authError);
+          if (retryAfter) {
+            retryAfterSeconds = parseInt(retryAfter, 10);
+          }
         }
-
-        // Add retry logic for network errors
+        
+        // Handle server errors with retry
         if (this.shouldRetry(error) && this.retryCount < this.maxRetries) {
           this.retryCount++;
           const delay = Math.pow(2, this.retryCount) * 1000; // Exponential backoff
+          
           console.log(`Retrying request (${this.retryCount}/${this.maxRetries}) after ${delay}ms`);
           
           return new Promise(resolve => {
             setTimeout(() => {
               if (error.config) {
-                resolve(this.api.request(error.config));
-              } else {
-                resolve(Promise.reject(error));
+                resolve(this.api(error.config));
               }
             }, delay);
           });
         }
-
-        // Convert to standardized error format
-        return Promise.reject(this.createAuthError(error));
+        
+        // Reset retry count for next request
+        this.retryCount = 0;
+        
+        // Create standardized error object
+        const authError = this.createAuthError(error, retryAfterSeconds);
+        return Promise.reject(authError);
       }
     );
   }
@@ -169,17 +169,14 @@ export class AuthService {
    */
   async registerUser(userData: RegisterRequest): Promise<ApiResponse<User>> {
     try {
-      // Validate input data on client side
       this.validateRegistrationData(userData);
-
-      const response = await this.api.post<ApiResponse<User>>('/auth/register', userData);
       
-      console.log('User registered successfully:', response.data.data?.email);
-      
+      const response = await this.api.post<ApiResponse<User>>('/v1/auth/register', userData);
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Registration error:', error);
-      throw this.handleApiError(error, 'Registration failed');
+      const authError = this.handleApiError(error, 'Registration failed');
+      throw authError;
     }
   }
 
@@ -188,22 +185,22 @@ export class AuthService {
    */
   async login(loginData: LoginRequest): Promise<ApiResponse<LoginResponse>> {
     try {
-      if (!loginData.email || !loginData.password) {
-        throw new Error('Email and password are required');
-      }
-
-      const response = await this.api.post<ApiResponse<LoginResponse>>('/auth/login', loginData);
+      const response = await this.api.post<ApiResponse<LoginResponse>>('/v1/auth/login', loginData);
       
-      // Store tokens based on rememberMe preference
-      if (response.data.data?.tokens) {
-        this.storeTokens(response.data.data.tokens, !!loginData.rememberMe);
+      if (response.data.success && response.data.data) {
+        // Store tokens based on remember me preference
+        const rememberMe = loginData.rememberMe || false;
+        this.storeTokens(response.data.data.tokens, rememberMe);
+        
+        // Update local user cache
         this.updateLocalUserCache(response.data.data.user);
       }
       
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login error:', error);
-      throw this.handleApiError(error, 'Login failed');
+      const authError = this.handleApiError(error, 'Login failed');
+      throw authError;
     }
   }
 
@@ -212,17 +209,19 @@ export class AuthService {
    */
   async logout(): Promise<ApiResponse<void>> {
     try {
-      const response = await this.api.post<ApiResponse<void>>('/auth/logout');
+      // Send logout request to server to invalidate refresh token
+      const response = await this.api.post<ApiResponse<void>>('/v1/auth/logout');
       
-      // Clear local storage regardless of API response
+      // Clear local authentication data regardless of server response
       this.clearAuthData();
       
       return response.data;
-    } catch (error) {
-      // Still clear local storage even if API call fails
-      this.clearAuthData();
+    } catch (error: any) {
       console.error('Logout error:', error);
-      throw this.handleApiError(error, 'Logout failed');
+      // Still clear local data even if server request fails
+      this.clearAuthData();
+      const authError = this.handleApiError(error, 'Logout failed');
+      throw authError;
     }
   }
 
@@ -231,22 +230,23 @@ export class AuthService {
    */
   async refreshToken(refreshToken: string): Promise<ApiResponse<TokenPair>> {
     try {
-      if (!refreshToken) {
-        throw new Error('Refresh token is required');
-      }
-
-      const response = await this.api.post<ApiResponse<TokenPair>>('/auth/refresh', { refreshToken });
+      const response = await this.api.post<ApiResponse<TokenPair>>('/v1/auth/refresh', {
+        refreshToken
+      });
       
-      // Update stored tokens
-      if (response.data.data) {
+      if (response.data.success && response.data.data) {
+        // Update stored tokens
         const isRememberMe = localStorage.getItem('auth_token') !== null;
         this.storeTokens(response.data.data, isRememberMe);
       }
       
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Token refresh error:', error);
-      throw this.handleApiError(error, 'Failed to refresh token');
+      // If refresh fails, clear auth data and redirect to login
+      this.handleTokenExpiration();
+      const authError = this.handleApiError(error, 'Token refresh failed');
+      throw authError;
     }
   }
 
@@ -259,17 +259,20 @@ export class AuthService {
         throw new Error('Verification token is required');
       }
 
-      const response = await this.api.post<ApiResponse<User>>('/auth/verify-email', { token });
+      const response = await this.api.post<ApiResponse<User>>('/v1/auth/verify-email', {
+        token
+      });
       
-      // Update local user cache if successful
+      // Update local user cache if verification successful
       if (response.data.success && response.data.data) {
         this.updateLocalUserCache(response.data.data);
       }
       
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Email verification error:', error);
-      throw this.handleApiError(error, 'Email verification failed');
+      const authError = this.handleApiError(error, 'Email verification failed');
+      throw authError;
     }
   }
 
@@ -281,41 +284,46 @@ export class AuthService {
       if (!email) {
         throw new Error('Email is required');
       }
-      
-      // Email format validation
+
+      // Validate email format
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
         throw new Error('Please provide a valid email address');
       }
 
-      const response = await this.api.post<ApiResponse<void>>('/auth/forgot-password', { email });
+      const response = await this.api.post<ApiResponse<void>>('/v1/auth/forgot-password', {
+        email
+      });
+      
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Password reset request error:', error);
-      throw this.handleApiError(error, 'Failed to request password reset');
+      const authError = this.handleApiError(error, 'Password reset request failed');
+      throw authError;
     }
   }
-  
+
   /**
    * Reset password with token
    */
   async resetPassword(resetData: PasswordResetRequest): Promise<ApiResponse<void>> {
     try {
-      const { token, newPassword } = resetData;
-      
-      if (!token || !newPassword) {
-        throw new Error('Token and new password are required');
+      if (!resetData.token || !resetData.newPassword) {
+        throw new Error('Reset token and new password are required');
       }
-      
-      if (newPassword.length < 8) {
+
+      // Validate password strength
+      if (resetData.newPassword.length < 8) {
         throw new Error('Password must be at least 8 characters long');
       }
 
-      const response = await this.api.post<ApiResponse<void>>('/auth/reset-password', resetData);
+      const response = await this.api.post<ApiResponse<void>>('/v1/auth/reset-password', resetData);
+      
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Password reset error:', error);
-      throw this.handleApiError(error, 'Failed to reset password');
+      const authError = this.handleApiError(error, 'Password reset failed');
+      throw authError;
     }
   }
 
@@ -325,19 +333,18 @@ export class AuthService {
   async resendVerificationEmail(email: string): Promise<ApiResponse<void>> {
     try {
       if (!email) {
-        throw new Error('Email address is required');
+        throw new Error('Email is required');
       }
 
-      const requestData: ResendVerificationRequest = { email };
-      const response = await this.api.post<ApiResponse<void>>('/auth/resend-verification', requestData);
-      
-      // TODO: Log resend request
-      console.log('Verification email resent to:', email);
+      const response = await this.api.post<ApiResponse<void>>('/v1/auth/resend-verification', {
+        email
+      });
       
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Resend verification error:', error);
-      throw this.handleApiError(error, 'Failed to resend verification email');
+      const authError = this.handleApiError(error, 'Failed to resend verification email');
+      throw authError;
     }
   }
 
@@ -346,20 +353,21 @@ export class AuthService {
    */
   async getUserProfile(): Promise<ApiResponse<User>> {
     try {
-      const response = await this.api.get<ApiResponse<User>>('/users/profile');
+      const response = await this.api.get<ApiResponse<User>>('/v1/users/profile');
       
-      // Update local user cache
+      // Update local user cache if successful
       if (response.data.success && response.data.data) {
         this.updateLocalUserCache(response.data.data);
       }
       
       return response.data;
-    } catch (error) {
-      console.error('Get profile error:', error);
-      throw this.handleApiError(error, 'Failed to get user profile');
+    } catch (error: any) {
+      console.error('Get user profile error:', error);
+      const authError = this.handleApiError(error, 'Failed to get user profile');
+      throw authError;
     }
   }
-  
+
   /**
    * Change user password
    */
@@ -372,39 +380,16 @@ export class AuthService {
       }
       
       if (newPassword.length < 8) {
-        throw new Error('New password must be at least 8 characters long');
+        throw new Error('Password must be at least 8 characters long');
       }
+
+      const response = await this.api.put<ApiResponse<void>>('/v1/users/password', passwordData);
       
-      const response = await this.api.put<ApiResponse<void>>('/users/password', passwordData);
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Change password error:', error);
-      throw this.handleApiError(error, 'Failed to change password');
-    }
-  }
-  
-  /**
-   * Delete user account
-   */
-  async deleteAccount(data: DeleteAccountRequest): Promise<ApiResponse<void>> {
-    try {
-      if (!data.password) {
-        throw new Error('Password is required to delete account');
-      }
-      
-      const response = await this.api.delete<ApiResponse<void>>('/users/account', { 
-        data: { password: data.password } 
-      });
-      
-      // Clear auth data on successful account deletion
-      if (response.data.success) {
-        this.clearAuthData();
-      }
-      
-      return response.data;
-    } catch (error) {
-      console.error('Delete account error:', error);
-      throw this.handleApiError(error, 'Failed to delete account');
+      const authError = this.handleApiError(error, 'Failed to change password');
+      throw authError;
     }
   }
 
@@ -413,36 +398,37 @@ export class AuthService {
    */
   async updateUserProfile(userData: UpdateProfileRequest): Promise<ApiResponse<User>> {
     try {
-      // Validate input data
       this.validateProfileUpdateData(userData);
 
-      const response = await this.api.put<ApiResponse<User>>('/users/profile', userData);
+      const response = await this.api.put<ApiResponse<User>>('/v1/users/profile', userData);
       
-      // Update local user cache
+      // Update local user cache if successful
       if (response.data.success && response.data.data) {
         this.updateLocalUserCache(response.data.data);
       }
       
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Update profile error:', error);
-      throw this.handleApiError(error, 'Failed to update profile');
+      const authError = this.handleApiError(error, 'Failed to update profile');
+      throw authError;
     }
   }
-  
+
   /**
    * Get all users (admin only)
    */
   async getAllUsers(params?: UserSearchParams): Promise<ApiResponse<User[]>> {
     try {
-      const response = await this.api.get<ApiResponse<User[]>>('/users', { params });
+      const response = await this.api.get<ApiResponse<User[]>>('/v1/admin/users', { params });
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Get all users error:', error);
-      throw this.handleApiError(error, 'Failed to get users list');
+      const authError = this.handleApiError(error, 'Failed to get users');
+      throw authError;
     }
   }
-  
+
   /**
    * Update user role (admin only)
    */
@@ -452,14 +438,16 @@ export class AuthService {
         throw new Error('User ID and role are required');
       }
 
-      const response = await this.api.put<ApiResponse<User>>(`/users/${userId}/role`, { role });
+      const response = await this.api.put<ApiResponse<User>>(`/v1/admin/users/${userId}`, { role });
+      
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Update user role error:', error);
-      throw this.handleApiError(error, 'Failed to update user role');
+      const authError = this.handleApiError(error, 'Failed to update user role');
+      throw authError;
     }
   }
-  
+
   /**
    * Update user status (admin only)
    */
@@ -469,11 +457,13 @@ export class AuthService {
         throw new Error('User ID is required');
       }
 
-      const response = await this.api.put<ApiResponse<User>>(`/users/${userId}/status`, { isActive });
+      const response = await this.api.put<ApiResponse<User>>(`/v1/admin/users/${userId}`, { isActive });
+      
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Update user status error:', error);
-      throw this.handleApiError(error, 'Failed to update user status');
+      const authError = this.handleApiError(error, 'Failed to update user status');
+      throw authError;
     }
   }
 
@@ -482,10 +472,10 @@ export class AuthService {
    */
   async healthCheck(): Promise<boolean> {
     try {
-      const response = await this.api.get('/auth/health');
-      return response.data.success === true;
-    } catch (error) {
-      console.error('Health check failed:', error);
+      const response = await this.api.get<any>('/health');
+      return response.data.status === 'ok';
+    } catch (error: any) {
+      console.error('Health check error:', error);
       return false;
     }
   }
@@ -494,60 +484,56 @@ export class AuthService {
    * Get authentication token from storage
    */
   private getAuthToken(): string | null {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
-    }
-    return null;
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
   }
-  
+
   /**
    * Store authentication tokens
    */
   private storeTokens(tokens: TokenPair, rememberMe: boolean): void {
     if (typeof window === 'undefined') return;
     
-    const { accessToken, refreshToken } = tokens;
+    const storage = rememberMe ? localStorage : sessionStorage;
     
-    // Store access token in appropriate storage based on rememberMe
+    // Store access token
+    storage.setItem('auth_token', tokens.accessToken.token);
+    
+    // Store refresh token
     if (rememberMe) {
-      localStorage.setItem('auth_token', accessToken.token);
-      localStorage.setItem('refresh_token', refreshToken.token);
+      localStorage.setItem('refresh_token', tokens.refreshToken.token);
     } else {
-      sessionStorage.setItem('auth_token', accessToken.token);
-      sessionStorage.setItem('refresh_token', refreshToken.token);
+      sessionStorage.setItem('refresh_token', tokens.refreshToken.token);
     }
   }
-  
+
   /**
    * Clear all authentication data
    */
   private clearAuthData(): void {
     if (typeof window === 'undefined') return;
     
-    // Clear tokens
+    // Clear tokens from both storages
     localStorage.removeItem('auth_token');
     localStorage.removeItem('refresh_token');
+    localStorage.removeItem('user_cache');
+    localStorage.removeItem('userEmail');
+    localStorage.removeItem('emailVerified');
+    
     sessionStorage.removeItem('auth_token');
     sessionStorage.removeItem('refresh_token');
-    
-    // Clear user data
-    localStorage.removeItem('user_data');
-    sessionStorage.removeItem('user_data');
+    sessionStorage.removeItem('user_cache');
   }
 
   /**
    * Handle token expiration
    */
   private handleTokenExpiration(): void {
+    this.clearAuthData();
+    
+    // Redirect to login page
     if (typeof window !== 'undefined') {
-      // Clear all auth data
-      this.clearAuthData();
-      
-      // Dispatch event for auth context to handle
-      const expiredEvent = new CustomEvent('auth:token_expired');
-      window.dispatchEvent(expiredEvent);
-      
-      // Don't force redirect here, let the auth context handle it
+      window.location.href = '/auth/login';
     }
   }
 
@@ -555,17 +541,16 @@ export class AuthService {
    * Update local user cache
    */
   private updateLocalUserCache(user?: User): void {
-    if (user && typeof window !== 'undefined') {
-      // Store in the same storage as the token (localStorage or sessionStorage)
-      if (localStorage.getItem('auth_token')) {
-        localStorage.setItem('user_data', JSON.stringify(user));
-      } else if (sessionStorage.getItem('auth_token')) {
-        sessionStorage.setItem('user_data', JSON.stringify(user));
-      }
-      
-      // Dispatch event for auth context to handle
-      const userUpdatedEvent = new CustomEvent('auth:user_updated', { detail: user });
-      window.dispatchEvent(userUpdatedEvent);
+    if (typeof window === 'undefined') return;
+    
+    if (user) {
+      localStorage.setItem('user_cache', JSON.stringify(user));
+      localStorage.setItem('userEmail', user.email);
+      localStorage.setItem('emailVerified', user.isEmailVerified.toString());
+    } else {
+      localStorage.removeItem('user_cache');
+      localStorage.removeItem('userEmail');
+      localStorage.removeItem('emailVerified');
     }
   }
 
@@ -573,22 +558,29 @@ export class AuthService {
    * Generate unique request ID
    */
   private generateRequestId(): string {
-    return `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
   }
 
   /**
    * Check if request should be retried
    */
   private shouldRetry(error: any): boolean {
-    // Retry on network errors and 5xx server errors
-    return !error.response || (error.response.status >= 500);
+    // Retry on network errors or 5xx server errors
+    return !error.response || (error.response.status >= 500 && error.response.status < 600);
   }
 
   /**
    * Create standardized AuthError
    */
-  private createAuthError(error: any): AuthError {
-    // Handle network errors (no response)
+  private createAuthError(error: any, retryAfterSeconds?: number): AuthError {
+    if (error.code === 'ECONNABORTED') {
+      return {
+        statusCode: 408,
+        message: 'Request timeout. Please try again.',
+        code: 'TIMEOUT_ERROR'
+      };
+    }
+    
     if (!error.response) {
       return {
         statusCode: 0,
@@ -604,18 +596,9 @@ export class AuthService {
       statusCode: error.response?.status || 500,
       message: response?.error || response?.message || error.message || 'An error occurred',
       field: response?.errors?.[0]?.field,
-      code: response?.code,
-      retryAfter: error.retryAfter
+      code: response?.code || 'API_ERROR',
+      retryAfter: retryAfterSeconds
     };
-  }
-
-  /**
-   * Throw validation error with field information
-   */
-  private throwValidationError(field: string, message: string): never {
-    const error = new Error(message);
-    (error as any).field = field;
-    throw error;
   }
 
   /**
@@ -688,20 +671,12 @@ export class AuthService {
    * Validate profile update data
    */
   private validateProfileUpdateData(data: UpdateProfileRequest): void {
-    // TODO: Implement client-side validation for profile updates
     if (data.firstName && (data.firstName.length < 2 || data.firstName.length > 50)) {
       throw new Error('First name must be between 2 and 50 characters');
     }
 
     if (data.lastName && (data.lastName.length < 2 || data.lastName.length > 50)) {
       throw new Error('Last name must be between 2 and 50 characters');
-    }
-
-    if (data.phone) {
-      const phoneRegex = /^[\+]?[0-9]{7,15}$/;
-      if (!phoneRegex.test(data.phone)) {
-        throw new Error('Please provide a valid phone number (7-15 digits with optional country code)');
-      }
     }
   }
 }
@@ -711,6 +686,7 @@ export const authService = new AuthService();
 
 // Export default instance
 export default authService;
+
 
 // Future enhancements:
 // - Add offline support with service worker
