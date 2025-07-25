@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { authService } from '../../services/auth.service';
+import { AuthError } from '../../types/auth.types';
 import { validatePassword, validateConfirmPassword } from '../../utils/validation';
 import { Eye, EyeOff, Lock, AlertCircle, CheckCircle, Loader2, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
@@ -35,29 +37,46 @@ const ResetPasswordForm: React.FC<ResetPasswordFormProps> = ({
     strength: 'weak' | 'medium' | 'strong';
   }>({ score: 0, strength: 'weak' });
 
+  // Get token from URL if not provided as prop
+  const searchParams = useSearchParams();
+  const urlToken = searchParams?.get('token');
+  const finalToken = token || urlToken || '';
+
   // Validate token on component mount
   useEffect(() => {
     const validateToken = async () => {
-      if (!token) {
+      const tokenToValidate = finalToken;
+      
+      if (!tokenToValidate) {
         setError('Invalid or missing password reset token');
         setIsValidating(false);
         return;
       }
 
       try {
-        // Mock API call to validate token
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        setIsValidating(true);
+        setError(null);
         
-        // Simulate token validation success
-        setIsValidating(false);
+        // Call API to validate token
+        const response = await authService.validateResetToken(tokenToValidate);
+        
+        if (response.success) {
+          // Token is valid, proceed with password reset
+          setSuccess('Please enter your new password');
+        } else {
+          setError(response.message || 'This password reset link is invalid or has expired');
+        }
       } catch (err) {
-        setError('This password reset link is invalid or has expired');
+        console.error('Token validation error:', err);
+        const authError = err as AuthError;
+        setError(authError.message || 'This password reset link is invalid or has expired');
+      } finally {
         setIsValidating(false);
       }
     };
 
     validateToken();
-  }, [token]);
+  }, [finalToken]);
 
   /**
    * Handle input change
@@ -116,15 +135,24 @@ const ResetPasswordForm: React.FC<ResetPasswordFormProps> = ({
       return;
     }
     
+    const tokenToUse = finalToken;
+    if (!tokenToUse) {
+      setError('Invalid or missing password reset token');
+      return;
+    }
+    
     setIsSubmitting(true);
     setError(null);
     
     try {
-      // Mock API call for now
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Call reset password API
+      await authService.resetPassword({
+        token: tokenToUse,
+        newPassword: formData.password
+      });
       
-      // Simulate successful response
-      setSuccess('Your password has been successfully reset. You can now log in with your new password.');
+      // Handle successful response
+      setSuccess('Your password has been successfully reset. You will be redirected to login page in a few seconds.');
       
       // Call success callback if provided
       if (onSuccess) {
@@ -136,9 +164,23 @@ const ResetPasswordForm: React.FC<ResetPasswordFormProps> = ({
         router.push('/auth/login');
       }, 3000);
     } catch (err) {
+      console.error('Password reset error:', err);
+      
       // Handle error
-      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
-      setError(errorMessage);
+      const authError = err as AuthError;
+      let errorMessage = 'Failed to reset password. Please try again.';
+      
+      // Handle specific error types
+      if (authError.message) {
+        errorMessage = authError.message;
+      }
+      
+      // Handle field-specific errors
+      if (authError.field) {
+        setFieldErrors(prev => ({ ...prev, [authError.field!]: authError.message }));
+      } else {
+        setError(errorMessage);
+      }
     } finally {
       setIsSubmitting(false);
     }

@@ -39,7 +39,7 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
       password: '',
       firstName: '',
       lastName: '',
-      phoneNumber: ''
+      phone: ''
     },
     confirmPassword: '',
     agreedToTerms: false
@@ -68,7 +68,6 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
 
     // Real-time password validation
     if (field === 'password') {
-      // TODO: Implement password strength validation
       const validation = validatePassword(value);
       setPasswordValidation(validation);
     }
@@ -80,7 +79,7 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // TODO: Validate all fields before submission
+    // Validate all fields before submission
     const validationErrors = validateForm();
     if (Object.keys(validationErrors).length > 0) {
       setFieldErrors(validationErrors);
@@ -90,19 +89,22 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
     setFormState(prev => ({ ...prev, isSubmitting: true, error: null }));
 
     try {
-      // TODO: Call registration API
+      // Call registration API
       const result = await authService.registerUser(formState.data);
       
-      // TODO: Handle successful registration
+      // Handle successful registration
       setFormState(prev => ({ 
         ...prev, 
         isSubmitting: false, 
         success: 'Registration successful! Please check your email for verification instructions.' 
       }));
 
-      // TODO: Redirect to success page
+      // Store user email for verification flow
+      localStorage.setItem('userEmail', formState.data.email);
+
+      // Redirect to verification page with email parameter
       setTimeout(() => {
-        router.push('/register/success');
+        router.push(`/auth/verify-email?email=${encodeURIComponent(formState.data.email)}`);
       }, 2000);
 
       // Call success callback if provided
@@ -114,10 +116,17 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
       console.error('Registration error:', error);
       
       const authError = error as AuthError;
+      let errorMessage = 'Registration failed. Please try again.';
+      
+      // Handle specific error types
+      if (authError.message) {
+        errorMessage = authError.message;
+      }
+      
       setFormState(prev => ({ 
         ...prev, 
         isSubmitting: false, 
-        error: authError.message || 'Registration failed. Please try again.' 
+        error: errorMessage
       }));
 
       // Handle field-specific errors
@@ -138,33 +147,48 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
   const validateForm = (): Record<string, string> => {
     const errors: Record<string, string> = {};
 
-    // TODO: Email validation
-    if (!validateEmail(formState.data.email).isValid) {
-      errors.email = 'Please enter a valid email address';
+    // Email validation
+    const emailValidation = validateEmail(formState.data.email);
+    if (!emailValidation.isValid) {
+      errors.email = emailValidation.message;
     }
 
-    // TODO: Password validation
-    if (!passwordValidation?.isValid) {
-      errors.password = passwordValidation?.message || 'Password does not meet requirements';
+    // Password validation
+    const passwordValidation = validatePassword(formState.data.password);
+    if (!passwordValidation.isValid) {
+      errors.password = passwordValidation.message;
     }
 
-    // TODO: Confirm password validation
-    if (formState.data.password !== formState.confirmPassword) {
-      errors.confirmPassword = 'Passwords do not match';
+    // First name validation
+    const firstNameValidation = validateName(formState.data.firstName);
+    if (!firstNameValidation.isValid) {
+      errors.firstName = firstNameValidation.message;
     }
 
-    // TODO: Name validations
-    if (!validateName(formState.data.firstName).isValid) {
-      errors.firstName = 'First name must be 2-50 characters and contain only letters';
+    // Last name validation
+    const lastNameValidation = validateName(formState.data.lastName);
+    if (!lastNameValidation.isValid) {
+      errors.lastName = lastNameValidation.message;
     }
 
-    if (!validateName(formState.data.lastName).isValid) {
-      errors.lastName = 'Last name must be 2-50 characters and contain only letters';
+    // Phone number validation (optional)
+    if (formState.data.phone) {
+      const phoneValidation = validatePhoneNumber(formState.data.phone);
+      if (!phoneValidation.isValid) {
+        errors.phone = phoneValidation.message;
+      }
     }
 
-    // TODO: Terms agreement validation
-    if (!formState.agreedToTerms) {
-      errors.terms = 'You must agree to the terms and conditions';
+    // Confirm password validation
+    const confirmPasswordValidation = validateConfirmPassword(formState.data.password, formState.confirmPassword);
+    if (!confirmPasswordValidation.isValid) {
+      errors.confirmPassword = confirmPasswordValidation.message;
+    }
+
+    // Terms agreement validation
+    const termsValidation = validateTermsAgreement(formState.agreedToTerms);
+    if (!termsValidation.isValid) {
+      errors.terms = termsValidation.message;
     }
 
     return errors;
@@ -312,9 +336,10 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
         </div>
 
         {/* Phone Number Field (Optional) */}
-        <div className="space-y-2">
-          <label htmlFor="phoneNumber" className="block text-sm font-semibold text-gray-700">
-            Phone Number <span className="text-gray-400 font-normal">(Optional)</span>
+        {/* Phone Number Field (Optional) */}
+        <div>
+          <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">
+            Phone Number <span className="text-gray-500">(Optional)</span>
           </label>
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -322,23 +347,18 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
             </div>
             <input
               type="tel"
-              id="phoneNumber"
-              value={formState.data.phoneNumber}
-              onChange={(e) => handleInputChange('phoneNumber', e.target.value)}
-              className={`w-full text-black pl-10 pr-4 py-3 border-2 rounded-xl shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                fieldErrors.phoneNumber 
-                  ? 'border-red-300 bg-red-50 focus:ring-red-500' 
-                  : 'border-gray-200 bg-gray-50 hover:border-gray-300 focus:bg-white'
+              id="phone"
+              value={formState.data.phone}
+              onChange={(e) => handleInputChange('phone', e.target.value)}
+              className={`text-black w-full pl-10 pr-4 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                fieldErrors.phone ? 'border-red-500' : 'border-gray-300'
               }`}
               placeholder="+1 (555) 123-4567"
               disabled={formState.isSubmitting}
             />
           </div>
-          {fieldErrors.phoneNumber && (
-            <div className="flex items-center mt-1">
-              <AlertCircle className="w-4 h-4 text-red-500 mr-1" />
-              <p className="text-red-500 text-sm">{fieldErrors.phoneNumber}</p>
-            </div>
+          {fieldErrors.phone && (
+            <p className="text-red-500 text-sm mt-1">{fieldErrors.phone}</p>
           )}
         </div>
 
@@ -365,8 +385,7 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
               onClick={() => setShowPassword(!showPassword)}
               className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
             >
-              {/* TODO: Add eye icon for password visibility toggle */}
-              {showPassword ? <EyeOff /> : <Eye /> }
+              {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
             </button>
           </div>
           
@@ -383,7 +402,6 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
                 <span className="text-sm font-medium capitalize">{passwordValidation.strength}</span>
               </div>
               <div className="mt-1 text-xs text-gray-600">
-                {/* TODO: Show detailed password requirements */}
                 Requirements: 8+ chars, uppercase, lowercase, number
               </div>
             </div>

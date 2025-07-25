@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
+import { authService } from '../../services/auth.service';
+import { AuthError } from '../../types/auth.types';
 import { validateEmail } from '../../utils/validation';
 import { Mail, AlertCircle, CheckCircle, Loader2, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
@@ -52,20 +54,34 @@ const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({
     setSuccess(null);
     
     try {
-      // Mock API call for now
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Call password reset API
+      await authService.requestPasswordReset(email);
       
-      // Simulate successful response
-      setSuccess(`Password reset instructions have been sent to ${email}. Please check your inbox.`);
+      // Handle successful response
+      setSuccess(`Password reset instructions have been sent to ${email}. Please check your inbox and follow the instructions to reset your password.`);
       
       // Call success callback if provided
       if (onSuccess) {
         onSuccess();
       }
     } catch (err) {
+      console.error('Password reset request error:', err);
+      
       // Handle error
-      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
-      setError(errorMessage);
+      const authError = err as AuthError;
+      let errorMessage = 'Failed to send password reset instructions. Please try again.';
+      
+      // Handle specific error types
+      if (authError.message) {
+        errorMessage = authError.message;
+      }
+      
+      // Handle field-specific errors
+      if (authError.field === 'email') {
+        setFieldError(authError.message);
+      } else {
+        setError(errorMessage);
+      }
     } finally {
       setIsSubmitting(false);
     }
