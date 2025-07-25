@@ -1,5 +1,13 @@
 'use client';
 
+// Extend Window interface for testing helpers
+declare global {
+  interface Window {
+    _getAuthContext: () => any;
+    _getAuthService: () => any;
+  }
+}
+
 import React, { createContext, useContext, useReducer, useEffect, ReactNode, useCallback, useRef } from 'react';
 import { 
   User, 
@@ -290,7 +298,10 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
-export const AuthProvider = ({ children }: { children: ReactNode }) => {
+export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
+  // For testing purposes only
+  const contextRef = useRef<AuthContextType | null>(null);
+
   // Reference to track if component is mounted
   const isMounted = useRef(true);
   // Reference to track token refresh timer
@@ -970,3 +981,16 @@ export const useAuth = (): AuthContextType => {
 };
 
 export default AuthContext;
+
+// Expose auth context for testing purposes
+if (typeof window !== 'undefined') {
+  window._getAuthContext = () => {
+    try {
+      return useAuth();
+    } catch (error) {
+      console.error('Error accessing AuthContext:', error);
+      return null;
+    }
+  };
+}
+

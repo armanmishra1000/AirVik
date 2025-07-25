@@ -848,31 +848,35 @@ export class AuthService {
     localStorage.removeItem('user_data');
     sessionStorage.removeItem('user_data');
     
-    // Clear any token refresh timer
+    // Clear token refresh timer
     this.clearTokenRefreshTimer();
-    
-    // Keep remember_me preference
   }
-
   /**
-   * Handle token expiration
+   * Handle token expiration by clearing auth data and redirecting to login
    */
-  private handleTokenExpiration(): void {
+  public handleTokenExpiration(): void {
+    console.log('Token expired or invalid, redirecting to login');
+    
     // Clear authentication data
     this.clearAuthData();
     
-    // Clear any existing refresh timer
-    this.clearTokenRefreshTimer();
-    
-    // Redirect to login page
+    // Dispatch a custom event that the AuthContext can listen for
     if (typeof window !== 'undefined') {
+      const event = new CustomEvent('auth:tokenExpired', {
+        detail: { reason: 'Token expired or invalid' }
+      });
+      window.dispatchEvent(event);
+      
       // Store the current path to redirect back after login
       const currentPath = window.location.pathname + window.location.search;
       if (currentPath !== '/login' && !currentPath.includes('/register') && !currentPath.includes('/verify-email')) {
-        localStorage.setItem('auth_redirect', currentPath);
+        sessionStorage.setItem('redirectAfterLogin', currentPath);
       }
       
-      window.location.href = '/login?expired=true';
+      // Redirect to login after a short delay to allow event listeners to process
+      setTimeout(() => {
+        window.location.href = '/login?expired=true';
+      }, 100);
     }
   }
 
@@ -1020,12 +1024,16 @@ export class AuthService {
   }
 }
 
-// Create singleton instance
+// Export auth service instance
 export const authService = new AuthService();
+
+// Expose auth service for testing purposes
+if (typeof window !== 'undefined') {
+  window._getAuthService = () => authService;
+}
 
 // Export default instance
 export default authService;
-
 
 // Future enhancements:
 // - Add offline support with service worker
