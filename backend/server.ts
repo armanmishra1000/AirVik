@@ -6,7 +6,7 @@ import { authRoutes } from './src/routes/auth.routes';
 
 dotenv.config();
 
-// Connect to MongoDB with test connection string
+// Connect to MongoDB Atlas for testing
 const MONGODB_TEST_URI = 'mongodb+srv://test:test123@cluster0.mongodb.net/airvik-test?retryWrites=true&w=majority';
 process.env.MONGODB_URI = MONGODB_TEST_URI;
 connectDB();

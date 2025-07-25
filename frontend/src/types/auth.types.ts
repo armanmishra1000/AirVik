@@ -222,6 +222,7 @@ export interface AuthState {
   status: AuthStatusType;
   isVerified: boolean;
   lastActivity: string; // ISO date string
+  tokenRefreshInProgress: boolean;
 }
 
 // Authentication context interface
@@ -301,17 +302,34 @@ export type AsyncState<T> = {
   error: string | null;
 };
 
+// Auth action types
 export type AuthAction = 
-  | { type: 'LOGIN_START' }
-  | { type: 'LOGIN_SUCCESS'; payload: User }
-  | { type: 'LOGIN_ERROR'; payload: AuthError }
-  | { type: 'LOGOUT' }
+  | { type: 'TOKEN_REFRESH_START' }
+  | { type: 'TOKEN_REFRESH_SUCCESS' }
+  | { type: 'TOKEN_REFRESH_ERROR'; payload: AuthError | null }
+  | { type: 'AUTH_START' }
+  | { type: 'AUTH_SUCCESS'; payload: User | null }
+  | { type: 'AUTH_ERROR'; payload: AuthError | null }
+  | { type: 'AUTH_LOGOUT' }
+  | { type: 'UPDATE_USER'; payload: User | null }
+  | { type: 'REFRESH_TOKEN_START' }
+  | { type: 'REFRESH_TOKEN_SUCCESS'; payload: User | null }
+  | { type: 'REFRESH_TOKEN_ERROR'; payload: AuthError | null }
+  | { type: 'CLEAR_ERROR' }
+  | { type: 'SET_LOADING'; payload: boolean }
+  | { type: 'UPDATE_ACTIVITY'; payload: string }
   | { type: 'REGISTER_START' }
   | { type: 'REGISTER_SUCCESS'; payload: User }
   | { type: 'REGISTER_ERROR'; payload: AuthError }
+  | { type: 'LOGIN_START' }
+  | { type: 'LOGIN_SUCCESS'; payload: User }
+  | { type: 'LOGIN_ERROR'; payload: AuthError }
   | { type: 'VERIFY_EMAIL_START' }
   | { type: 'VERIFY_EMAIL_SUCCESS'; payload: User }
   | { type: 'VERIFY_EMAIL_ERROR'; payload: AuthError }
+  | { type: 'RESEND_VERIFICATION_START' }
+  | { type: 'RESEND_VERIFICATION_SUCCESS' }
+  | { type: 'RESEND_VERIFICATION_ERROR'; payload: AuthError }
   | { type: 'UPDATE_PROFILE_START' }
   | { type: 'UPDATE_PROFILE_SUCCESS'; payload: User }
   | { type: 'UPDATE_PROFILE_ERROR'; payload: AuthError }
@@ -321,17 +339,9 @@ export type AuthAction =
   | { type: 'CHANGE_PASSWORD_START' }
   | { type: 'CHANGE_PASSWORD_SUCCESS' }
   | { type: 'CHANGE_PASSWORD_ERROR'; payload: AuthError }
-  | { type: 'REFRESH_TOKEN_START' }
-  | { type: 'REFRESH_TOKEN_SUCCESS'; payload: User }
-  | { type: 'REFRESH_TOKEN_ERROR'; payload: AuthError }
-  | { type: 'REFRESH_USER'; payload: User }
-  | { type: 'CLEAR_ERROR' }
-  | { type: 'AUTH_START' }
-  | { type: 'AUTH_SUCCESS'; payload: User }
-  | { type: 'AUTH_ERROR'; payload: AuthError }
-  | { type: 'AUTH_LOGOUT' }
-  | { type: 'UPDATE_USER'; payload: User }
-  | { type: 'SET_LOADING'; payload: boolean };
+  | { type: 'DELETE_ACCOUNT_START' }
+  | { type: 'DELETE_ACCOUNT_SUCCESS' }
+  | { type: 'DELETE_ACCOUNT_ERROR'; payload: AuthError };
 
 // Route protection types
 export type ProtectedRouteProps = {
@@ -356,6 +366,9 @@ export interface ApiConfig {
   timeout: number;
   retryAttempts: number;
   version: string;
+  tokenRefreshThreshold: number; // Seconds before token expiry to refresh
+  tokenRefreshRetryDelay: number; // Milliseconds between refresh attempts
+  maxRefreshRetries: number; // Maximum number of refresh attempts
 }
 
 // Token interfaces
