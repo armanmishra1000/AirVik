@@ -95,7 +95,7 @@ export class AuthService {
         return config;
       },
       (error) => {
-        console.error('Request interceptor error:', error);
+        // Request interceptor error - handled silently
         return Promise.reject(error);
       }
     );
@@ -110,7 +110,7 @@ export class AuthService {
         
         // Check if response has expected format
         if (!response.data.hasOwnProperty('success')) {
-          console.warn('API response missing success property:', response.data);
+          // API response missing success property - handled silently
         }
         
         return response;
@@ -118,14 +118,10 @@ export class AuthService {
       async (error: AxiosError) => {
         // Handle network errors (no response)
         if (!error.response) {
-          console.error('Network error:', error.message);
           return Promise.reject(this.createNetworkError(error));
         }
         
-        // Log error details in development
-        if (process.env.NODE_ENV === 'development') {
-          console.error('API Error:', error.response?.data || error.message);
-        }
+        // Handle API errors silently - UI will display user-friendly messages
         
         // Handle token expiration (401)
         if (error.response?.status === 401) {
@@ -187,14 +183,12 @@ export class AuthService {
       this.validateRegistrationData(userData);
       
       // Log API endpoint and exact request payload
-      console.log('API Request:', 'POST /v1/auth/register');
-      console.log('Request payload:', JSON.stringify(userData, null, 2));
-      console.log('Request headers:', this.api.defaults.headers);
+      // API Request: POST /v1/auth/register
       
       // Make API request
       const response = await this.api.post<ApiResponse<{user: User, token: string}>>(`/v1/auth/register`, userData);
       
-      console.log('Registration successful response:', JSON.stringify(response.data));
+      // Registration successful
       
       if (response.data.success && response.data.data) {
         // Store user data but not auth token since email verification is required
@@ -209,27 +203,12 @@ export class AuthService {
       
       return response.data;
     } catch (error) {
-      console.error('REGISTRATION ERROR CAUGHT:', error);
-      
-      // Log full error object for debugging
-      console.error('Full error object:', {
-        message: (error as any).message,
-        name: (error as any).name,
-        stack: (error as any).stack,
-        isAxiosError: (error as any).isAxiosError || false,
-        status: (error as any).response?.status,
-        statusText: (error as any).response?.statusText
-      });
-      
-      // Log validation errors if present
-      if ((error as any).response?.data?.errors) {
-        console.error('Validation errors:', JSON.stringify((error as any).response.data.errors, null, 2));
-      }
+      // Handle registration errors silently for expected cases like duplicate email
       
       // Check for rate limiting errors
       if ((error as any).response?.status === 429) {
         const retryAfter = (error as any).response?.headers?.['retry-after'] || 60;
-        console.warn(`Rate limited. Please wait ${retryAfter} seconds before trying again.`);
+        // Rate limited - will be handled by UI
         
         // Return a structured error response for rate limiting
         return {
@@ -241,32 +220,7 @@ export class AuthService {
         } as ApiResponse<any>;
       }
       
-      // Debug: Log the error response in detail
-      if ((error as any).response?.data) {
-        console.error('Registration error details (response data):', JSON.stringify((error as any).response.data, null, 2));
-      }
-      
-      // Log the request configuration to see what was actually sent
-      if ((error as any).config) {
-        console.error('Request configuration:', {
-          url: (error as any).config.url,
-          method: (error as any).config.method,
-          headers: (error as any).config.headers,
-          data: JSON.parse((error as any).config.data || '{}'),
-          baseURL: (error as any).config.baseURL
-        });
-      }
-      if ((error as any).response?.status) {
-        console.error('Registration error status:', (error as any).response.status);
-      }
-      if ((error as any).response?.headers) {
-        console.error('Registration error headers:', JSON.stringify((error as any).response.headers, null, 2));
-      }
-      console.error('Full error object:', JSON.stringify(error, (key, value) => {
-        // Handle circular references
-        if (key === 'request' || key === 'config') return '[omitted]';
-        return value;
-      }, 2));
+      // Error details are handled by the response interceptor and UI
       // Re-throw the error as-is since the response interceptor has already processed it
       throw error;
     }
@@ -373,7 +327,7 @@ export class AuthService {
       const response = await this.api.get('/health');
       return response.data.status === 'ok';
     } catch (error) {
-      console.error('Health check failed:', error);
+      // Health check failed - handled silently
       return false;
     }
   }
@@ -414,7 +368,7 @@ export class AuthService {
         await this.api.post('/v1/auth/logout');
       }
     } catch (error) {
-      console.error('Logout error:', error);
+      // Logout error - handled silently
     } finally {
       // Always clear local auth state regardless of API success
       this.clearAuthData();

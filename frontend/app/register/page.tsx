@@ -33,7 +33,7 @@ export default function RegisterPage() {
             window.location.href = `/register/success?email=${encodeURIComponent(user.email)}`;
           }}
           onError={(error) => {
-            console.error('Registration error:', error);
+            // Registration error handled by UI - no console logging needed
           }}
           className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10"
         />
