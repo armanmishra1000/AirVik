@@ -304,6 +304,27 @@ export class AuthService {
   }
 
   /**
+   * Validate password reset token
+   */
+  async validateResetToken(token: string): Promise<ApiResponse<{ email: string }>> {
+    try {
+      if (!token) {
+        throw new Error('Reset token is required');
+      }
+
+      const response = await this.api.get<ApiResponse<{ email: string }>>(
+        `/v1/auth/validate-reset-token?token=${encodeURIComponent(token)}`
+      );
+      
+      return response.data;
+    } catch (error: any) {
+      console.error('Token validation error:', error);
+      const authError = this.handleApiError(error, 'Invalid or expired reset token');
+      throw authError;
+    }
+  }
+
+  /**
    * Reset password with token
    */
   async resetPassword(resetData: PasswordResetRequest): Promise<ApiResponse<void>> {
