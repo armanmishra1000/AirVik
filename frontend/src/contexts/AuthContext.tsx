@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, ReactNode, useCallback, useRef } from 'react';
 import { 
   User, 
   AuthError, 
@@ -41,7 +41,8 @@ const initialState: AuthState = {
   error: null,
   status: 'idle' as AuthStatusType,
   isVerified: false,
-  lastActivity: new Date().toISOString()
+  lastActivity: new Date().toISOString(),
+  tokenRefreshInProgress: false
 };
 
 // Token management functions
@@ -100,6 +101,9 @@ const clearTokens = (): void => {
   sessionStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
   sessionStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
   sessionStorage.removeItem(STORAGE_KEYS.USER_DATA);
+  
+  // Clear token refresh timer
+  clearTokenRefreshTimer();
 };
 
 const storeUserData = (user: User | null): void => {
@@ -140,6 +144,25 @@ const clearUserData = (): void => {
 // Auth reducer
 const authReducer = (state: AuthState, action: AuthAction): AuthState => {
   switch (action.type) {
+    case 'TOKEN_REFRESH_START':
+      return {
+        ...state,
+        tokenRefreshInProgress: true
+      };
+      
+    case 'TOKEN_REFRESH_SUCCESS':
+      return {
+        ...state,
+        tokenRefreshInProgress: false,
+        error: null
+      };
+      
+    case 'TOKEN_REFRESH_ERROR':
+      return {
+        ...state,
+        tokenRefreshInProgress: false,
+        error: action.payload
+      };
     case 'AUTH_START':
       return {
         ...state,
@@ -268,9 +291,18 @@ interface AuthProviderProps {
 }
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
+  // Reference to track if component is mounted
+  const isMounted = useRef(true);
+  // Reference to track token refresh timer
+  const tokenRefreshTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [state, dispatch] = useReducer(authReducer, initialState);
 
   const initializeAuth = async () => {
+    // Skip if not in browser environment
+    if (typeof window === 'undefined') {
+      dispatch({ type: 'SET_LOADING', payload: false });
+      return;
+    }
     try {
       dispatch({ type: 'AUTH_START' });
 
@@ -282,9 +314,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
 
-      // Try to get stored user data first for immediate UI update
+      // Check for stored tokens
+      const storedTokens = getStoredTokens();
       const storedUser = getStoredUserData();
-      if (storedUser) {
+      
+      // Setup token refresh timer if tokens exist
+      if (storedTokens?.accessToken?.token) {
+        setupTokenRefreshTimer(storedTokens);
+      }
+      
+      if (!storedTokens || !storedUser) {
         // Temporarily set the user from storage while we verify with the server
         dispatch({ type: 'AUTH_SUCCESS', payload: storedUser });
       }
@@ -309,21 +348,45 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (authError.statusCode === 401 || authError.code === 'TOKEN_EXPIRED') {
         // Try to refresh the token
         try {
-          const tokens = getStoredTokens();
-          if (tokens?.refreshToken?.token) {
-            const refreshResponse = await authService.refreshToken(tokens.refreshToken.token);
-            if (refreshResponse.success && refreshResponse.data) {
-              // Store new tokens
-              const rememberMe = localStorage.getItem(STORAGE_KEYS.REMEMBER_ME) === 'true';
-              storeTokens(refreshResponse.data, rememberMe);
-              
-              // Retry getting user profile
-              const userResponse = await authService.getUserProfile();
-              if (userResponse.success && userResponse.data) {
-                dispatch({ type: 'AUTH_SUCCESS', payload: userResponse.data });
-                return;
-              }
-            }
+          const refreshToken = localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN) || 
+                             sessionStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
+          
+          if (!refreshToken) {
+            dispatch({ type: 'REFRESH_TOKEN_ERROR', payload: {
+              statusCode: 401,
+              message: 'No refresh token available',
+              code: 'NO_REFRESH_TOKEN'
+            } as AuthError});
+            return false;
+          }
+          
+          const response = await authService.refreshToken(refreshToken);
+          
+          if (!response.success || !response.data) {
+            dispatch({ type: 'REFRESH_TOKEN_ERROR', payload: {
+              statusCode: 401,
+              message: response.error || 'Failed to refresh token',
+              code: 'REFRESH_FAILED'
+            } as AuthError});
+            
+            // Handle token expiration by redirecting to login
+            handleTokenExpiration();
+            return false;
+          }
+          
+          // Store new tokens
+          const rememberMe = localStorage.getItem(STORAGE_KEYS.REMEMBER_ME) === 'true';
+          storeTokens(response.data, rememberMe);
+          
+          // Setup token refresh timer for new tokens
+          setupTokenRefreshTimer(response.data);
+          
+          // Get user profile with new token
+          const userResponse = await authService.getUserProfile();
+          
+          if (userResponse.success && userResponse.data) {
+            dispatch({ type: 'REFRESH_TOKEN_SUCCESS', payload: userResponse.data });
+            return true;
           }
         } catch (refreshError) {
           console.error('Token refresh failed:', refreshError);
@@ -345,18 +408,56 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   // Initialize auth state on mount
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+      clearTokenRefreshTimer();
+    };
+  }, []);
+  
+  // Initialize auth on mount
   useEffect(() => {
     initializeAuth();
+    
+    // Setup event listener for storage changes (for multi-tab support)
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key === STORAGE_KEYS.ACCESS_TOKEN || event.key === STORAGE_KEYS.REFRESH_TOKEN) {
+        initializeAuth();
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, []);
-
-  const clearTokens = () => {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('auth_token');
-      localStorage.removeItem('user_data');
-      sessionStorage.removeItem('auth_token');
-      sessionStorage.removeItem('user_data');
-    }
-  };
+  
+  // Setup activity tracking for session management
+  useEffect(() => {
+    const trackActivity = () => {
+      if (state.isAuthenticated) {
+        dispatch({ 
+          type: 'UPDATE_ACTIVITY', 
+          payload: new Date().toISOString() 
+        });
+      }
+    };
+    
+    // Track user activity
+    window.addEventListener('click', trackActivity);
+    window.addEventListener('keypress', trackActivity);
+    window.addEventListener('scroll', trackActivity);
+    window.addEventListener('mousemove', trackActivity);
+    
+    return () => {
+      window.removeEventListener('click', trackActivity);
+      window.removeEventListener('keypress', trackActivity);
+      window.removeEventListener('scroll', trackActivity);
+      window.removeEventListener('mousemove', trackActivity);
+    };
+  }, [state.isAuthenticated]);
 
   // Login function
   const login = async (email: string, password: string, rememberMe: boolean = false): Promise<void> => {
@@ -431,6 +532,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  /**
+   * Handle token expiration by redirecting to login
+   */
+  const handleTokenExpiration = (): void => {
+    // Clear authentication data
+    clearTokens();
+    clearUserData();
+    
+    // Store intended redirect path before redirecting
+    if (typeof window !== 'undefined') {
+      const currentPath = window.location.pathname + window.location.search;
+      if (currentPath !== '/auth/login') {
+        sessionStorage.setItem('redirectAfterLogin', currentPath);
+      }
+      
+      // Redirect to login page with expired flag
+      if (!window.location.pathname.includes('/auth/login')) {
+        window.location.href = '/auth/login?expired=true';
+      }
+    }
+  };
+  
   // Logout function
   const logout = async (): Promise<void> => {
     try {
@@ -551,19 +674,115 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return false;
   };
 
+  /**
+   * Parse JWT token to extract expiration time
+   */
+  const getTokenExpiration = (token: string): number | null => {
+    if (!token) return null;
+    
+    try {
+      // Extract payload from JWT token (middle part between dots)
+      const base64Url = token.split('.')[1];
+      if (!base64Url) return null;
+      
+      // Convert base64url to base64 and decode
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const payload = JSON.parse(window.atob(base64));
+      
+      // Get expiration time
+      if (payload && payload.exp) {
+        return payload.exp;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Error parsing JWT token:', error);
+      return null;
+    }
+  };
+  
+  /**
+   * Check if token is about to expire within threshold
+   */
+  const isTokenExpiringSoon = (token: string): boolean => {
+    const expiration = getTokenExpiration(token);
+    if (!expiration) return false;
+    
+    const now = Math.floor(Date.now() / 1000); // Current time in seconds
+    const threshold = 5 * 60; // 5 minutes in seconds
+    
+    return expiration - now <= threshold;
+  };
+  
+  /**
+   * Setup token refresh timer based on token expiration
+   */
+  const setupTokenRefreshTimer = useCallback((tokens: TokenPair): void => {
+    // Clear any existing timer
+    clearTokenRefreshTimer();
+    
+    if (!tokens.accessToken?.token) return;
+    
+    const expiration = getTokenExpiration(tokens.accessToken.token);
+    if (!expiration) return;
+    
+    const currentTime = Math.floor(Date.now() / 1000); // Current time in seconds
+    const tokenRefreshThreshold = 5 * 60; // 5 minutes before expiry
+    const timeUntilRefresh = Math.max(0, expiration - currentTime - tokenRefreshThreshold);
+    
+    console.log(`Setting up token refresh in ${timeUntilRefresh} seconds`);
+    
+    // Set timer to refresh token before it expires
+    tokenRefreshTimerRef.current = setTimeout(async () => {
+      console.log('Token refresh timer triggered');
+      try {
+        const success = await refreshToken();
+        if (success) {
+          console.log('Scheduled token refresh successful');
+          // Get updated tokens and setup next refresh
+          const newTokens = getStoredTokens();
+          if (newTokens) {
+            setupTokenRefreshTimer(newTokens);
+          }
+        } else {
+          console.error('Scheduled token refresh failed - redirecting to login');
+          handleTokenExpiration();
+        }
+      } catch (error) {
+        console.error('Scheduled token refresh failed:', error);
+        handleTokenExpiration();
+      }
+    }, timeUntilRefresh * 1000); // Convert to milliseconds
+  }, []);
+
+  /**
+   * Clear token refresh timer
+   */
+  const clearTokenRefreshTimer = (): void => {
+    if (tokenRefreshTimerRef.current) {
+      clearTimeout(tokenRefreshTimerRef.current);
+      tokenRefreshTimerRef.current = null;
+    }
+  };
+  
   // Refresh token
   const refreshToken = async (): Promise<boolean> => {
+    // Skip if refresh is already in progress
+    if (state.tokenRefreshInProgress) {
+      return false;
+    }
+    
+    dispatch({ type: 'TOKEN_REFRESH_START' });
     try {
-      dispatch({ type: 'REFRESH_TOKEN_START' });
-      
       // Get stored tokens
       const tokens = getStoredTokens();
-      if (!tokens || !tokens.refreshToken.token) {
+      if (!tokens || !tokens.refreshToken?.token) {
         dispatch({ type: 'REFRESH_TOKEN_ERROR', payload: {
           statusCode: 401,
           message: 'No refresh token available',
           code: 'NO_REFRESH_TOKEN'
         } as AuthError});
+        handleTokenExpiration();
         return false;
       }
       
@@ -580,6 +799,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           message: response.error || 'Failed to refresh token',
           code: 'REFRESH_FAILED'
         } as AuthError});
+        handleTokenExpiration();
         return false;
       }
       
@@ -587,19 +807,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const rememberMe = localStorage.getItem(STORAGE_KEYS.REMEMBER_ME) === 'true';
       storeTokens(response.data, rememberMe);
       
-      // Get user profile with new token
-      const userResponse = await authService.getUserProfile();
+      // Setup token refresh timer for new tokens
+      setupTokenRefreshTimer(response.data);
       
-      if (userResponse.success && userResponse.data) {
-        dispatch({ type: 'REFRESH_TOKEN_SUCCESS', payload: userResponse.data });
+      // Get user profile with new token to ensure user data is fresh
+      try {
+        const userResponse = await authService.getUserProfile();
+        
+        if (userResponse.success && userResponse.data) {
+          // Store updated user data
+          storeUserData(userResponse.data);
+          dispatch({ type: 'REFRESH_TOKEN_SUCCESS', payload: userResponse.data });
+          return true;
+        } else {
+          // Token refresh succeeded but user profile failed - still consider success
+          console.warn('Token refresh succeeded but user profile fetch failed');
+          dispatch({ type: 'REFRESH_TOKEN_SUCCESS', payload: state.user });
+          return true;
+        }
+      } catch (profileError) {
+        // Token refresh succeeded but user profile failed - still consider success
+        console.warn('Token refresh succeeded but user profile fetch failed:', profileError);
+        dispatch({ type: 'REFRESH_TOKEN_SUCCESS', payload: state.user });
         return true;
-      } else {
-        dispatch({ type: 'REFRESH_TOKEN_ERROR', payload: {
-          statusCode: 401,
-          message: 'Failed to get user profile after token refresh',
-          code: 'USER_PROFILE_FAILED'
-        } as AuthError});
-        return false;
       }
     } catch (error) {
       console.error('Token refresh error:', error);
@@ -607,6 +837,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       clearUserData();
       
       dispatch({ type: 'REFRESH_TOKEN_ERROR', payload: error as AuthError });
+      
+      // Handle token expiration by redirecting to login
+      handleTokenExpiration();
       return false;
     }
   };

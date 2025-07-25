@@ -1,4 +1,4 @@
-import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, AxiosError } from 'axios';
+import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { 
   RegisterRequest, 
   VerifyEmailRequest, 
@@ -24,17 +24,26 @@ const API_CONFIG: ApiConfig = {
   baseUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api',
   timeout: 10000, // 10 seconds
   retryAttempts: 3,
-  version: 'v1'
+  version: 'v1',
+  // Token refresh settings
+  tokenRefreshThreshold: 5 * 60, // Refresh token 5 minutes before expiry (in seconds)
+  tokenRefreshRetryDelay: 5000, // 5 seconds delay between refresh attempts
+  maxRefreshRetries: 3 // Maximum number of refresh attempts
 };
 
 export class AuthService {
   private api: AxiosInstance;
   private retryCount = 0;
   private maxRetries = API_CONFIG.retryAttempts;
+  private refreshRetryCount = 0;
+  private maxRefreshRetries = API_CONFIG.maxRefreshRetries;
+  private refreshTokenPromise: Promise<ApiResponse<TokenPair>> | null = null;
+  private tokenRefreshTimer: NodeJS.Timeout | null = null;
 
   constructor() {
     this.api = this.createApiInstance();
     this.setupInterceptors();
+    this.initializeAuthPersistence();
   }
 
   /**
@@ -52,16 +61,91 @@ export class AuthService {
   }
 
   /**
+   * Initialize authentication persistence across browser sessions
+   */
+  private initializeAuthPersistence(): void {
+    if (typeof window === 'undefined') return;
+    
+    // Check for stored tokens and setup automatic refresh if available
+    const accessToken = this.getAuthToken();
+    const refreshToken = this.getRefreshToken();
+    
+    if (accessToken && refreshToken) {
+      const tokens: TokenPair = {
+        accessToken: {
+          token: accessToken,
+          expiresAt: new Date(Date.now() + 3600000).toISOString() // Default 1 hour
+        },
+        refreshToken: {
+          token: refreshToken,
+          expiresAt: new Date(Date.now() + 604800000).toISOString() // Default 7 days
+        }
+      };
+      
+      // Setup token refresh timer for existing tokens
+      this.setupTokenRefreshTimer(tokens);
+      
+      // Check if token is about to expire and refresh proactively
+      if (this.isTokenExpiringSoon(accessToken)) {
+        console.log('Token is expiring soon, refreshing proactively');
+        this.performTokenRefresh().catch(error => {
+          console.error('Proactive token refresh failed:', error);
+        });
+      }
+    }
+    
+    // Setup storage event listener for multi-tab synchronization
+    window.addEventListener('storage', this.handleStorageChange.bind(this));
+  }
+  
+  /**
+   * Handle storage changes for multi-tab synchronization
+   */
+  private handleStorageChange(event: StorageEvent): void {
+    if (event.key === 'auth_token' || event.key === 'refresh_token') {
+      // Token changed in another tab, refresh current tab's state
+      if (event.newValue === null) {
+        // Token was removed in another tab, clear local auth
+        this.clearAuthData();
+      } else {
+        // Token was updated in another tab, update local state
+        const accessToken = this.getAuthToken();
+        const refreshToken = this.getRefreshToken();
+        
+        if (accessToken && refreshToken) {
+          const tokens: TokenPair = {
+            accessToken: {
+              token: accessToken,
+              expiresAt: new Date(Date.now() + 3600000).toISOString()
+            },
+            refreshToken: {
+              token: refreshToken,
+              expiresAt: new Date(Date.now() + 604800000).toISOString()
+            }
+          };
+          
+          this.setupTokenRefreshTimer(tokens);
+        }
+      }
+    }
+  }
+
+  /**
    * Setup request/response interceptors
    */
   private setupInterceptors(): void {
     // Request interceptor
     this.api.interceptors.request.use(
-      (config) => {
-        // Add authentication token if available
-        const token = this.getAuthToken();
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
+      (config: InternalAxiosRequestConfig) => {
+        // Skip adding auth token for refresh token requests to avoid loops
+        const isRefreshRequest = config.url?.includes('/auth/refresh');
+        
+        // Add authentication token if available and not a refresh request
+        if (!isRefreshRequest) {
+          const token = this.getAuthToken();
+          if (token) {
+            config.headers.Authorization = `Bearer ${token}`;
+          }
         }
 
         // Add request ID for tracking
@@ -76,7 +160,11 @@ export class AuthService {
         // Add client info
         config.headers['X-Client-Type'] = 'web';
 
-        console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
+        // Log non-refresh requests to avoid excessive logging
+        if (!isRefreshRequest) {
+          console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
+        }
+        
         return config;
       },
       (error) => {
@@ -89,76 +177,102 @@ export class AuthService {
     this.api.interceptors.response.use(
       (response) => {
         // Process successful response
-        if (response.data && response.data.data && response.data.data.user) {
+        if (response.data && response.data.data) {
           // Update local user cache if user data is returned
-          this.updateLocalUserCache(response.data.data.user);
+          if (response.data.data.user) {
+            this.updateLocalUserCache(response.data.data.user);
+          }
+          
+          // Setup token refresh timer if tokens are returned
+          if (response.data.data.accessToken && response.data.data.refreshToken) {
+            this.setupTokenRefreshTimer(response.data.data);
+          }
         }
         return response;
       },
       async (error: AxiosError) => {
         // Handle token expiration (401)
         if (error.response?.status === 401) {
-          const refreshToken = localStorage.getItem('refresh_token') || sessionStorage.getItem('refresh_token');
+          // Skip if this is a refresh token request to avoid infinite loops
+          if (error.config?.url?.includes('/auth/refresh')) {
+            // Refresh token is invalid or expired, clear auth and redirect to login
+            console.log('Refresh token is invalid or expired');
+            this.handleTokenExpiration();
+            return Promise.reject(error);
+          }
           
-          // Try to refresh token if available and not already trying to refresh
-          if (refreshToken && !error.config?.url?.includes('/auth/refresh')) {
-            try {
-              // Attempt to refresh the token
-              const response = await this.api.post<ApiResponse<TokenPair>>('/v1/auth/refresh', { refreshToken });
-              
-              if (response.data.success && response.data.data) {
-                // Store new tokens
-                const isRememberMe = localStorage.getItem('auth_token') !== null;
-                this.storeTokens(response.data.data, isRememberMe);
+          // Skip if this request has already been retried to prevent infinite loops
+          const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+          if (originalRequest._retry) {
+            console.log('Request already retried, giving up');
+            this.handleTokenExpiration();
+            return Promise.reject(error);
+          }
+          
+          // Mark this request as being retried
+          originalRequest._retry = true;
+          
+          try {
+            console.log('Attempting token refresh for 401 error');
+            // Try to refresh the token using our centralized refresh method
+            const tokens = await this.performTokenRefresh();
+            
+            if (tokens && tokens.accessToken) {
+              console.log('Token refresh successful, retrying original request');
+              // Update the authorization header with new token
+              if (originalRequest && originalRequest.headers) {
+                originalRequest.headers.Authorization = `Bearer ${tokens.accessToken.token}`;
                 
                 // Retry the original request with new token
-                const originalRequest = error.config;
-                if (originalRequest && originalRequest.headers) {
-                  originalRequest.headers.Authorization = `Bearer ${response.data.data.accessToken.token}`;
-                  return this.api(originalRequest);
-                }
+                return this.api(originalRequest);
               }
-            } catch (refreshError) {
-              // If refresh fails, clear auth and redirect to login
-              console.error('Token refresh failed:', refreshError);
+            } else {
+              console.log('Token refresh failed - no tokens returned');
               this.handleTokenExpiration();
+              return Promise.reject(error);
             }
-          } else {
-            // No refresh token or already trying to refresh, handle expiration
+          } catch (refreshError) {
+            // If refresh fails, clear auth and redirect to login
+            console.error('Token refresh failed:', refreshError);
             this.handleTokenExpiration();
+            return Promise.reject(error);
           }
         }
         
         // Handle rate limiting (429)
-        let retryAfterSeconds: number | undefined;
         if (error.response?.status === 429) {
           const retryAfter = error.response.headers['retry-after'];
-          if (retryAfter) {
-            retryAfterSeconds = parseInt(retryAfter, 10);
-          }
+          const retrySeconds = retryAfter ? parseInt(retryAfter, 10) : 60;
+          
+          // Create error with retry information
+          const authError = this.createAuthError(error, retrySeconds);
+          return Promise.reject(authError);
         }
         
-        // Handle server errors with retry
+        // Handle server errors with retry logic
         if (this.shouldRetry(error) && this.retryCount < this.maxRetries) {
           this.retryCount++;
           const delay = Math.pow(2, this.retryCount) * 1000; // Exponential backoff
           
           console.log(`Retrying request (${this.retryCount}/${this.maxRetries}) after ${delay}ms`);
           
-          return new Promise(resolve => {
-            setTimeout(() => {
-              if (error.config) {
-                resolve(this.api(error.config));
+          return new Promise((resolve, reject) => {
+            setTimeout(async () => {
+              try {
+                const retryResponse = await this.api(error.config);
+                resolve(retryResponse);
+              } catch (retryError) {
+                reject(retryError);
               }
             }, delay);
           });
         }
         
-        // Reset retry count for next request
+        // Reset retry counter for next request
         this.retryCount = 0;
         
-        // Create standardized error object
-        const authError = this.createAuthError(error, retryAfterSeconds);
+        // Create standardized error
+        const authError = this.createAuthError(error);
         return Promise.reject(authError);
       }
     );
@@ -230,23 +344,33 @@ export class AuthService {
    */
   async refreshToken(refreshToken: string): Promise<ApiResponse<TokenPair>> {
     try {
-      const response = await this.api.post<ApiResponse<TokenPair>>('/v1/auth/refresh', {
-        refreshToken
-      });
+      // Use centralized refresh token method
+      const tokens = await this.performTokenRefresh(refreshToken);
       
-      if (response.data.success && response.data.data) {
-        // Update stored tokens
-        const isRememberMe = localStorage.getItem('auth_token') !== null;
-        this.storeTokens(response.data.data, isRememberMe);
+      if (tokens) {
+        return {
+          success: true,
+          data: tokens,
+          message: 'Token refreshed successfully'
+        };
+      } else {
+        throw new Error('Failed to refresh token');
       }
-      
-      return response.data;
-    } catch (error: any) {
+    } catch (error) {
       console.error('Token refresh error:', error);
-      // If refresh fails, clear auth data and redirect to login
-      this.handleTokenExpiration();
-      const authError = this.handleApiError(error, 'Token refresh failed');
-      throw authError;
+      
+      // Clear tokens on refresh error
+      this.clearAuthData();
+      
+      // Convert to standardized error
+      const authError = this.handleApiError(error, 'Failed to refresh authentication token');
+      
+      // Return failed response
+      return {
+        success: false,
+        error: authError.message,
+        code: authError.code
+      };
     }
   }
 
@@ -506,7 +630,183 @@ export class AuthService {
    */
   private getAuthToken(): string | null {
     if (typeof window === 'undefined') return null;
-    return localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+    
+    return localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') || null;
+  }
+  
+  /**
+   * Get refresh token from storage
+   */
+  private getRefreshToken(): string | null {
+    if (typeof window === 'undefined') return null;
+    
+    return localStorage.getItem('refresh_token') || sessionStorage.getItem('refresh_token') || null;
+  }
+  
+  /**
+   * Parse JWT token and extract expiration time
+   */
+  private getTokenExpiration(token: string): number | null {
+    try {
+      const base64Url = token.split('.')[1];
+      if (!base64Url) return null;
+      
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => {
+        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+      }).join(''));
+      
+      const payload = JSON.parse(jsonPayload);
+      return payload.exp ? payload.exp : null;
+    } catch (error) {
+      console.error('Error parsing JWT token:', error);
+      return null;
+    }
+  }
+  
+  /**
+   * Check if token is about to expire
+   */
+  private isTokenExpiringSoon(token: string): boolean {
+    const expiration = this.getTokenExpiration(token);
+    if (!expiration) return false;
+    
+    // Check if token will expire within the threshold (default: 5 minutes)
+    const currentTime = Math.floor(Date.now() / 1000); // Current time in seconds
+    return expiration - currentTime < API_CONFIG.tokenRefreshThreshold;
+  }
+  
+  /**
+   * Setup token refresh timer based on token expiration
+   */
+  private setupTokenRefreshTimer(tokens: TokenPair): void {
+    // Clear any existing timer
+    this.clearTokenRefreshTimer();
+    
+    if (!tokens.accessToken?.token) return;
+    
+    const expiration = this.getTokenExpiration(tokens.accessToken.token);
+    if (!expiration) return;
+    
+    const currentTime = Math.floor(Date.now() / 1000); // Current time in seconds
+    const timeUntilRefresh = Math.max(0, expiration - currentTime - API_CONFIG.tokenRefreshThreshold);
+    
+    console.log(`Setting up token refresh in ${timeUntilRefresh} seconds`);
+    
+    // Set timer to refresh token before it expires
+    this.tokenRefreshTimer = setTimeout(() => {
+      console.log('Token refresh timer triggered');
+      this.performTokenRefresh().catch(error => {
+        console.error('Scheduled token refresh failed:', error);
+      });
+    }, timeUntilRefresh * 1000); // Convert to milliseconds
+  }
+  
+  /**
+   * Clear token refresh timer
+   */
+  private clearTokenRefreshTimer(): void {
+    if (this.tokenRefreshTimer) {
+      clearTimeout(this.tokenRefreshTimer);
+      this.tokenRefreshTimer = null;
+    }
+  }
+  
+  /**
+   * Perform token refresh with retry logic
+   */
+  private async performTokenRefresh(providedToken?: string): Promise<TokenPair | null> {
+    const refreshToken = providedToken || this.getRefreshToken();
+    
+    if (!refreshToken) {
+      console.error('No refresh token available for refresh');
+      this.handleTokenExpiration();
+      return null;
+    }
+    
+    // If there's already a refresh in progress, return that promise
+    if (this.refreshTokenPromise) {
+      console.log('Token refresh already in progress, waiting...');
+      try {
+        return await this.refreshTokenPromise.then(response => {
+          return response.success && response.data ? response.data : null;
+        });
+      } catch (error) {
+        console.error('Existing token refresh promise failed:', error);
+        return null;
+      }
+    }
+    
+    console.log('Starting new token refresh process');
+    
+    // Create a new refresh token promise
+    this.refreshTokenPromise = new Promise<ApiResponse<TokenPair>>(async (resolve, reject) => {
+      try {
+        // Reset retry counter
+        this.refreshRetryCount = 0;
+        
+        // Attempt to refresh with retries
+        const response = await this.attemptTokenRefresh(refreshToken);
+        resolve(response);
+      } catch (error) {
+        console.error('Token refresh process failed:', error);
+        reject(error);
+      } finally {
+        // Clear the promise reference
+        this.refreshTokenPromise = null;
+      }
+    });
+    
+    // Wait for the promise to resolve
+    const response = await this.refreshTokenPromise;
+    
+    if (response.success && response.data) {
+      // Store new tokens
+      const isRememberMe = localStorage.getItem('auth_token') !== null;
+      this.storeTokens(response.data, isRememberMe);
+      return response.data;
+    }
+    
+    return null;
+  }
+  
+  /**
+   * Attempt token refresh with retry logic
+   */
+  private async attemptTokenRefresh(refreshToken: string): Promise<ApiResponse<TokenPair>> {
+    try {
+      const response = await this.api.post<ApiResponse<TokenPair>>('/v1/auth/refresh', { refreshToken });
+      return response.data;
+    } catch (error) {
+      // Retry on server errors or network issues
+      if (this.shouldRetry(error) && this.refreshRetryCount < this.maxRefreshRetries) {
+        this.refreshRetryCount++;
+        const delay = API_CONFIG.tokenRefreshRetryDelay;
+        
+        console.log(`Retrying token refresh (${this.refreshRetryCount}/${this.maxRefreshRetries}) after ${delay}ms`);
+        
+        return new Promise((resolve, reject) => {
+          setTimeout(async () => {
+            try {
+              const retryResponse = await this.attemptTokenRefresh(refreshToken);
+              resolve(retryResponse);
+            } catch (retryError) {
+              reject(retryError);
+            }
+          }, delay);
+        });
+      }
+      
+      // Convert to standardized error
+      const authError = this.handleApiError(error, 'Failed to refresh authentication token');
+      
+      // Return failed response
+      return {
+        success: false,
+        error: authError.message,
+        code: authError.code
+      };
+    }
   }
 
   /**
@@ -517,15 +817,19 @@ export class AuthService {
     
     const storage = rememberMe ? localStorage : sessionStorage;
     
-    // Store access token
-    storage.setItem('auth_token', tokens.accessToken.token);
-    
-    // Store refresh token
-    if (rememberMe) {
-      localStorage.setItem('refresh_token', tokens.refreshToken.token);
-    } else {
-      sessionStorage.setItem('refresh_token', tokens.refreshToken.token);
+    if (tokens.accessToken) {
+      storage.setItem('auth_token', tokens.accessToken.token);
     }
+    
+    if (tokens.refreshToken) {
+      storage.setItem('refresh_token', tokens.refreshToken.token);
+    }
+    
+    // Remember user preference
+    localStorage.setItem('remember_me', rememberMe.toString());
+    
+    // Setup automatic token refresh
+    this.setupTokenRefreshTimer(tokens);
   }
 
   /**
@@ -534,27 +838,41 @@ export class AuthService {
   private clearAuthData(): void {
     if (typeof window === 'undefined') return;
     
-    // Clear tokens from both storages
+    // Clear tokens
     localStorage.removeItem('auth_token');
     localStorage.removeItem('refresh_token');
-    localStorage.removeItem('user_cache');
-    localStorage.removeItem('userEmail');
-    localStorage.removeItem('emailVerified');
-    
     sessionStorage.removeItem('auth_token');
     sessionStorage.removeItem('refresh_token');
-    sessionStorage.removeItem('user_cache');
+    
+    // Clear user data
+    localStorage.removeItem('user_data');
+    sessionStorage.removeItem('user_data');
+    
+    // Clear any token refresh timer
+    this.clearTokenRefreshTimer();
+    
+    // Keep remember_me preference
   }
 
   /**
    * Handle token expiration
    */
   private handleTokenExpiration(): void {
+    // Clear authentication data
     this.clearAuthData();
+    
+    // Clear any existing refresh timer
+    this.clearTokenRefreshTimer();
     
     // Redirect to login page
     if (typeof window !== 'undefined') {
-      window.location.href = '/auth/login';
+      // Store the current path to redirect back after login
+      const currentPath = window.location.pathname + window.location.search;
+      if (currentPath !== '/login' && !currentPath.includes('/register') && !currentPath.includes('/verify-email')) {
+        localStorage.setItem('auth_redirect', currentPath);
+      }
+      
+      window.location.href = '/login?expired=true';
     }
   }
 
