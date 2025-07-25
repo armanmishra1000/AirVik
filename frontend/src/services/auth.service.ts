@@ -121,7 +121,7 @@ export class AuthService {
         return config;
       },
       (error) => {
-        console.error('Request interceptor error:', error);
+        // Request interceptor error - handled silently
         return Promise.reject(error);
       }
     );
@@ -136,7 +136,7 @@ export class AuthService {
         
         // Check if response has expected format
         if (!response.data.hasOwnProperty('success')) {
-          console.warn('API response missing success property:', response.data);
+          // API response missing success property - handled silently
         }
         
         return response;
@@ -144,14 +144,10 @@ export class AuthService {
       async (error: AxiosError) => {
         // Handle network errors (no response)
         if (!error.response) {
-          console.error('Network error:', error.message);
           return Promise.reject(this.createNetworkError(error));
         }
         
-        // Log error details in development
-        if (process.env.NODE_ENV === 'development') {
-          console.error('API Error:', error.response?.data || error.message);
-        }
+        // Handle API errors silently - UI will display user-friendly messages
         
         // Handle validation errors (400) - don't retry these
         if (error.response?.status === 400) {

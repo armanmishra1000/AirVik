@@ -7,11 +7,12 @@ import {
   RegistrationFormState, 
   PasswordValidation,
   RegistrationFormProps,
-  AuthError 
+  AuthError,
+  User 
 } from '../../types/auth.types';
 import { authService } from '../../services/auth.service';
 import { validatePassword, validateEmail, validateName, validatePhoneNumber } from '../../utils/validation';
-import { Eye, EyeOff, User, Mail, Phone, Lock, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Mail, Phone, Lock, CheckCircle, AlertCircle, Loader2, User as UserIcon } from 'lucide-react';
 
 const RegistrationForm: React.FC<RegistrationFormProps> = ({ 
   onSuccess, 
@@ -103,12 +104,14 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
       }, 2000);
 
       // Call success callback if provided
-      if (onSuccess && result.data && result.data.user) {
-        onSuccess(result.data.user);
+      if (onSuccess && result.data) {
+        // Extract user from the response data
+        const user = (result.data as any).user || result.data;
+        onSuccess(user as User);
       }
 
     } catch (error) {
-      console.error('Registration error:', error);
+      // Handle registration error silently - UI will show user-friendly message
       
       const authError = error as AuthError;
       setFormState(prev => ({ 
@@ -185,7 +188,7 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
       {/* Header */}
       <div className="text-center mb-8">
         <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full mb-4">
-          <User className="w-8 h-8 text-white" />
+          <UserIcon className="w-8 h-8 text-white" />
         </div>
         <h2 className="text-3xl font-bold text-gray-900 mb-2">Create Account</h2>
         <p className="text-gray-600">Join AirVik and start your journey</p>
@@ -223,7 +226,7 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
             <input
               type="email"
               id="email"
-              value={formState.data.email}
+              value={formState.data.email || ''}
               onChange={(e) => handleInputChange('email', e.target.value)}
               className={`w-full text-black pl-10 pr-4 py-3 border-2 rounded-xl shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
                 fieldErrors.email 
@@ -251,12 +254,12 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
             </label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <User className="h-5 w-5 text-gray-400" />
+                <UserIcon className="h-5 w-5 text-gray-400" />
               </div>
               <input
                 type="text"
                 id="firstName"
-                value={formState.data.firstName}
+                value={formState.data.firstName || ''}
                 onChange={(e) => handleInputChange('firstName', e.target.value)}
                 className={`w-full text-black pl-10 pr-4 py-3 border-2 rounded-xl shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
                   fieldErrors.firstName 
@@ -282,12 +285,12 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
             </label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <User className="h-5 w-5 text-gray-400" />
+                <UserIcon className="h-5 w-5 text-gray-400" />
               </div>
               <input
                 type="text"
                 id="lastName"
-                value={formState.data.lastName}
+                value={formState.data.lastName || ''}
                 onChange={(e) => handleInputChange('lastName', e.target.value)}
                 className={`w-full text-black pl-10 pr-4 py-3 border-2 rounded-xl shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
                   fieldErrors.lastName 
@@ -320,7 +323,7 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
             <input
               type="tel"
               id="phoneNumber"
-              value={formState.data.phoneNumber}
+              value={formState.data.phoneNumber || ''}
               onChange={(e) => handleInputChange('phoneNumber', e.target.value)}
               className={`w-full text-black pl-10 pr-4 py-3 border-2 rounded-xl shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
                 fieldErrors.phoneNumber 
@@ -348,7 +351,7 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
             <input
               type={showPassword ? 'text' : 'password'}
               id="password"
-              value={formState.data.password}
+              value={formState.data.password || ''}
               onChange={(e) => handleInputChange('password', e.target.value)}
               className={`text-black w-full px-3 py-2 pr-10 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                 fieldErrors.password ? 'border-red-500' : 'border-gray-300'
@@ -399,7 +402,7 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
           <input
             type={showPassword ? 'text' : 'password'}
             id="confirmPassword"
-            value={formState.confirmPassword}
+            value={formState.confirmPassword || ''}
             onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
             className={`text-black w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
               fieldErrors.confirmPassword ? 'border-red-500' : 'border-gray-300'
