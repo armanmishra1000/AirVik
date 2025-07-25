@@ -110,8 +110,8 @@ const clearTokens = (): void => {
   sessionStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
   sessionStorage.removeItem(STORAGE_KEYS.USER_DATA);
   
-  // Clear token refresh timer
-  clearTokenRefreshTimer();
+  // Clear token refresh timer using authService
+  authService.clearTokenRefreshTimer();
 };
 
 const storeUserData = (user: User | null): void => {
@@ -204,12 +204,24 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
           action.payload?.code === 'TOKEN_EXPIRED') {
         clearTokens();
       }
+      
+      // Format error to ensure it's a properly formatted error object with string message
+      let formattedError = action.payload;
+      if (typeof formattedError === 'object' && formattedError !== null) {
+        formattedError = {
+          ...formattedError,
+          message: typeof formattedError.message === 'string' ? formattedError.message : 'An error occurred'
+        };
+      } else if (formattedError === null || formattedError === undefined) {
+        formattedError = { message: 'An unknown error occurred', code: 'UNKNOWN_ERROR', statusCode: 500 };
+      }
+      
       return {
         ...state,
         user: null,
         isAuthenticated: false,
         isLoading: false,
-        error: action.payload,
+        error: formattedError,
         status: 'error',
         isVerified: false,
         lastActivity: new Date().toISOString(),
@@ -263,12 +275,24 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
     case 'REFRESH_TOKEN_ERROR':
       // Clear tokens on refresh error
       clearTokens();
+      
+      // Format error to ensure it's a properly formatted error object with string message
+      let formattedRefreshError = action.payload;
+      if (typeof formattedRefreshError === 'object' && formattedRefreshError !== null) {
+        formattedRefreshError = {
+          ...formattedRefreshError,
+          message: typeof formattedRefreshError.message === 'string' ? formattedRefreshError.message : 'Token refresh failed'
+        };
+      } else if (formattedRefreshError === null || formattedRefreshError === undefined) {
+        formattedRefreshError = { message: 'Token refresh failed', code: 'REFRESH_ERROR', statusCode: 401 };
+      }
+      
       return {
         ...state,
         user: null,
         isAuthenticated: false,
         isLoading: false,
-        error: action.payload,
+        error: formattedRefreshError,
         status: 'error',
         isVerified: false,
         lastActivity: new Date().toISOString(),

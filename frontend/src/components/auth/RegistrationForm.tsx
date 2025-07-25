@@ -100,11 +100,11 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({
       }));
 
       // Store user email for verification flow
-      localStorage.setItem('userEmail', formState.data.email);
+      localStorage.setItem('registrationEmail', formState.data.email);
 
-      // Redirect to verification page with email parameter
+      // Redirect to registration success page with email parameter
       setTimeout(() => {
-        router.push(`/auth/verify-email?email=${encodeURIComponent(formState.data.email)}`);
+        router.push(`/auth/register/success?email=${encodeURIComponent(formState.data.email)}`);
       }, 2000);
 
       // Call success callback if provided

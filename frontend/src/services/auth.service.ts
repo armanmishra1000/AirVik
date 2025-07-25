@@ -21,7 +21,7 @@ import {
 
 // API configuration
 const API_CONFIG: ApiConfig = {
-  baseUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api',
+  baseUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api/v1',
   timeout: 10000, // 10 seconds
   retryAttempts: 3,
   version: 'v1',
@@ -259,7 +259,19 @@ export class AuthService {
           return new Promise((resolve, reject) => {
             setTimeout(async () => {
               try {
-                const retryResponse = await this.api(error.config);
+                if (!error.config) {
+                  reject(new Error('No request config available for retry'));
+                  return;
+                }
+                // Create a new config object with the proper type
+                const retryConfig: AxiosRequestConfig = {
+                  ...error.config,
+                  headers: {
+                    ...error.config.headers,
+                    'X-Retry-Attempt': this.retryCount.toString(),
+                  },
+                };
+                const retryResponse = await this.api.request(retryConfig);
                 resolve(retryResponse);
               } catch (retryError) {
                 reject(retryError);
@@ -285,7 +297,7 @@ export class AuthService {
     try {
       this.validateRegistrationData(userData);
       
-      const response = await this.api.post<ApiResponse<User>>('/v1/auth/register', userData);
+      const response = await this.api.post<ApiResponse<User>>('auth/register', userData);
       return response.data;
     } catch (error: any) {
       console.error('Registration error:', error);
@@ -299,7 +311,7 @@ export class AuthService {
    */
   async login(loginData: LoginRequest): Promise<ApiResponse<LoginResponse>> {
     try {
-      const response = await this.api.post<ApiResponse<LoginResponse>>('/v1/auth/login', loginData);
+      const response = await this.api.post<ApiResponse<LoginResponse>>('auth/login', loginData);
       
       if (response.data.success && response.data.data) {
         // Store tokens based on remember me preference
@@ -324,7 +336,7 @@ export class AuthService {
   async logout(): Promise<ApiResponse<void>> {
     try {
       // Send logout request to server to invalidate refresh token
-      const response = await this.api.post<ApiResponse<void>>('/v1/auth/logout');
+      const response = await this.api.post<ApiResponse<void>>('auth/logout');
       
       // Clear local authentication data regardless of server response
       this.clearAuthData();
@@ -383,9 +395,9 @@ export class AuthService {
         throw new Error('Verification token is required');
       }
 
-      const response = await this.api.post<ApiResponse<User>>('/v1/auth/verify-email', {
-        token
-      });
+      const response = await this.api.post<ApiResponse<User>>('auth/verify-email', {
+      token
+    });
       
       // Update local user cache if verification successful
       if (response.data.success && response.data.data) {
@@ -703,9 +715,10 @@ export class AuthService {
   }
   
   /**
-   * Clear token refresh timer
+   * Clear the token refresh timer
+   * This method is public to allow external cleanup from AuthContext
    */
-  private clearTokenRefreshTimer(): void {
+  public clearTokenRefreshTimer(): void {
     if (this.tokenRefreshTimer) {
       clearTimeout(this.tokenRefreshTimer);
       this.tokenRefreshTimer = null;
